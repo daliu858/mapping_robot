@@ -1,0 +1,73 @@
+JetBot Pro IMX219-83 RC3 overlay
+Date: 2026-08-01
+Expected base repository commit: b76d483
+Supersedes: RC2 overlay
+
+Purpose
+-------
+This archive keeps the complete RC2 stereo/semantic-map overlay and adds a
+headless, guarded stereo-calibration workflow for the Jetson Nano.  It excludes
+unchanged legacy voice files that contain historical embedded credentials.
+
+RC3 changes
+-----------
+- Adds stereo_calibrate_headless.launch.  It captures 640x480@30 FPS, uses the
+  verified physical mapping sensor-id 0=robot left and sensor-id 1=robot right,
+  applies a strict 5 ms pair gate, and never starts LiDAR or disparity.
+- Adds stereo_calibrate_headless.py.  It reuses ROS camera_calibration for
+  checkerboard detection/sample diversity, requires 24-40 stable pairs, reports
+  X/Y/size/skew coverage, and needs no Jetson display, mouse, or keyboard.
+- Adds stereo_calibration_core.py.  It runs full 100-iteration OpenCV mono and
+  fixed-intrinsic stereo solves, rejects isolated views with a robust threshold,
+  rectifies the cameras, and reports reprojection/epipolar metrics.
+- Hard quality gates reject non-finite matrices/metrics, invalid projection
+  signs, excessive RMS/epipolar errors, implausible inter-camera rotation, and
+  a baseline outside 45-75 mm.
+- Official YAML is written only after all gates pass.  camera_name is exactly
+  left/right; pair replacement is staged, backed up, and rolled back after a
+  partial filesystem failure.  A failed run leaves formal YAML untouched.
+- A timeout is honoured even while checkerboard detection is busy, and image
+  processing is throttled from the end of each expensive detection to avoid a
+  continuous Nano CPU backlog.
+- Adds numerical, YAML validation/rollback, timeout, and launch-safety tests.
+
+Deployment
+----------
+From the Jetson account, after verifying the archive SHA256 and making a backup:
+
+  tar -xzf ~/jetbot_pro_imx21983_rc3_overlay.tar.gz -C ~/catkin_ws/src
+  cd ~/catkin_ws
+  catkin_make -j1
+  source devel/setup.bash
+
+Calibration command
+-------------------
+Only after the camera PCB is rigidly mounted and the printed 100 mm reference
+line measures 99-101 mm:
+
+  roslaunch jetbot_pro stereo_calibrate_headless.launch
+
+Release gates completed
+-----------------------
+- Windows Python syntax and launch/package XML parsing: pass.
+- Static headless launch defaults: pass.
+- Jetson ROS Melodic / Python 2 / OpenCV 4.1 imports and build: pass.
+- Jetson catkin/nosetests: 27 tests, 0 errors, 0 failures, 0 skipped.
+- Real two-camera no-board smoke test: both streams started at 30 FPS; the 5 ms
+  gate accepted roughly 121-133 pairs per 150 raw frames with mean dt around
+  1.3-2.2 ms and max below 5 ms.
+- The 8 second test timeout terminated the complete launch with exit code 2,
+  wrote a readable failure report, stopped all camera processes, and created no
+  stereo_left_640x480.yaml or stereo_right_640x480.yaml.
+- Independent local sub-agent code review findings were verified and fixed.
+- A Fable5 external review request and subsequent connection check both timed
+  out; no Fable5 findings were available.
+
+Still required before metric depth is claimed
+---------------------------------------------
+- Rigidly mount the stereo PCB in its final pose; do not calibrate while it is
+  hanging from CSI ribbons or being held by hand.
+- Measure the printed 100 mm line, mount the paper flat on a rigid backing, and
+  perform the real 24-40 pose calibration.
+- Restart the cameras, validate rectification/disparity, measure known-distance
+  depth, and then run the full SLAM/semantic-map recording load.

@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="with_base" default="false"/>
+  <arg name="keyboard" default="true"/>
+  <arg name="joystick" default="false"/>
+
+  <group if="$(arg with_base)">
+    <include file="$(find jetbot_pro)/launch/jetbot.launch"/>
+  </group>
+
+  <!-- If both are requested, joystick wins so two publishers never compete. -->
+  <group if="$(eval arg('keyboard') and not arg('joystick'))">
+    <include file="$(find jetbot_pro)/launch/keyboard_teleop.launch"/>
+  </group>
+
+  <group if="$(arg joystick)">
+    <include file="$(find jetbot_pro)/launch/joystick_teleop.launch"/>
+  </group>
+</launch>

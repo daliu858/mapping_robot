@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="cmd_vel_topic" default="/cmd_vel"/>
+  <arg name="speed" default="0.35"/>
+  <arg name="turn" default="1.2"/>
+  <arg name="speed_limit" default="0.70"/>
+  <arg name="turn_limit" default="2.50"/>
+  <!-- The node opens /dev/tty itself, so this works in a normal SSH shell
+       without X11. Pass terminal_prefix:="xterm -hold -e" on a desktop. -->
+  <arg name="terminal_prefix" default=""/>
+
+  <node pkg="jetbot_pro"
+        type="keyboard_teleop.py"
+        name="keyboard_teleop"
+        output="screen"
+        launch-prefix="$(arg terminal_prefix)">
+    <param name="speed" value="$(arg speed)"/>
+    <param name="turn" value="$(arg turn)"/>
+    <param name="speed_limit" value="$(arg speed_limit)"/>
+    <param name="turn_limit" value="$(arg turn_limit)"/>
+    <remap from="/cmd_vel" to="$(arg cmd_vel_topic)"/>
+  </node>
+</launch>

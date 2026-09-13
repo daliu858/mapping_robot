@@ -1,0 +1,77 @@
+<?xml version="1.0"?>
+<!-- Collect a final-map-aligned stereo bag after gmapping has been saved.
+
+     Second pass: AMCL localizes every camera frame against the already saved
+     occupancy map.  Use a glass-keepout derivative of that map when a 2D
+     LiDAR sees through a closed glass door; otherwise AMCL/TEB treat the
+     hole as free space.  Default motion is the joystick.  TEB is opt-in
+     via control_mode:=navigation after the local costmap StaticLayer fix.
+-->
+<launch>
+  <arg name="map_file"/>
+  <arg name="camera_mount"
+       doc="measured: x y z yaw pitch roll from base_footprint to left optical frame"/>
+  <arg name="initial_pose_x"/>
+  <arg name="initial_pose_y"/>
+  <arg name="initial_pose_a"/>
+  <arg name="bag" default="$(env HOME)/semantic_survey_stereo.bag"/>
+  <arg name="control_mode" default="joystick" doc="joystick, navigation, or openloop"/>
+  <arg name="camera_mode" default="stereo" doc="stereo or mono"/>
+  <arg name="base_port" default="/dev/ttyACM0"/>
+  <arg name="lidar_port" default="/dev/ttyACM1"/>
+  <arg name="left_sensor_id" default="1"/>
+  <arg name="right_sensor_id" default="0"/>
+  <arg name="mono_sensor_id" default="0"/>
+  <arg name="max_amcl_xy_std_m" default="0.75"/>
+  <arg name="max_amcl_yaw_std_rad" default="0.40"/>
+  <arg name="amcl_bad_samples" default="3"/>
+  <arg name="amcl_motion_timeout_s" default="10.0"/>
+  <arg name="require_localization" default="true"/>
+  <arg name="fps" default="15"/>
+  <arg name="left_camera_info_url"
+       default="file://$(find jetbot_pro)/config/camera_calibration/stereo_left_640x480.yaml"/>
+  <arg name="right_camera_info_url"
+       default="file://$(find jetbot_pro)/config/camera_calibration/stereo_right_640x480.yaml"/>
+
+  <include file="$(find jetbot_pro)/launch/nav.launch">
+    <arg name="map_file" value="$(arg map_file)"/>
+    <arg name="initial_pose_x" value="$(arg initial_pose_x)"/>
+    <arg name="initial_pose_y" value="$(arg initial_pose_y)"/>
+    <arg name="initial_pose_a" value="$(arg initial_pose_a)"/>
+    <arg name="base_port" value="$(arg base_port)"/>
+    <arg name="lidar_port" value="$(arg lidar_port)"/>
+    <arg name="camera_mode" value="$(arg camera_mode)"/>
+    <arg name="left_sensor_id" value="$(arg left_sensor_id)"/>
+    <arg name="right_sensor_id" value="$(arg right_sensor_id)"/>
+    <arg name="mono_sensor_id" value="$(arg mono_sensor_id)"/>
+    <arg name="left_camera_info_url" value="$(arg left_camera_info_url)"/>
+    <arg name="right_camera_info_url" value="$(arg right_camera_info_url)"/>
+    <arg name="load_camera_info" value="true"/>
+    <arg name="start_camera" value="true"/>
+    <arg name="start_stereo_image_proc" value="false"/>
+    <arg name="start_move_base"
+         value="$(eval arg('control_mode') == 'navigation')"/>
+    <arg name="fps" value="$(arg fps)"/>
+  </include>
+
+  <group if="$(eval arg('control_mode') == 'joystick')">
+    <include file="$(find jetbot_pro)/launch/joystick_teleop.launch">
+      <arg name="require_enable_button" value="false"/>
+      <arg name="scale_linear" value="0.15"/>
+      <arg name="scale_linear_turbo" value="0.30"/>
+    </include>
+  </group>
+
+  <include file="$(find jetbot_pro)/launch/record_offline.launch">
+    <arg name="bag" value="$(arg bag)"/>
+    <arg name="map_file" value="$(arg map_file)"/>
+    <arg name="camera_mount" value="$(arg camera_mount)"/>
+    <arg name="camera_mode" value="$(arg camera_mode)"/>
+    <arg name="mono_sensor_id" value="$(arg mono_sensor_id)"/>
+    <arg name="max_amcl_xy_std_m" value="$(arg max_amcl_xy_std_m)"/>
+    <arg name="max_amcl_yaw_std_rad" value="$(arg max_amcl_yaw_std_rad)"/>
+    <arg name="amcl_bad_samples" value="$(arg amcl_bad_samples)"/>
+    <arg name="amcl_motion_timeout_s" value="$(arg amcl_motion_timeout_s)"/>
+    <arg name="require_localization" value="$(arg require_localization)"/>
+  </include>
+</launch>

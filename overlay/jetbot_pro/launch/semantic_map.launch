@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<!-- Two-pass entry point: AMCL on the saved occupancy map, then a checked
+     stereo survey bag for PC-side open-vocabulary detection.  Semantic fusion
+     stays offline because it does not fit the Jetson Nano real-time budget. -->
+<launch>
+  <arg name="map_file"/>
+  <arg name="camera_mount"
+       doc="measured: x y z yaw pitch roll from base_footprint to left optical frame"/>
+  <arg name="initial_pose_x"/>
+  <arg name="initial_pose_y"/>
+  <arg name="initial_pose_a"/>
+  <arg name="bag" default="$(env HOME)/semantic_survey_stereo.bag"/>
+  <arg name="control_mode" default="joystick" doc="joystick or navigation"/>
+  <arg name="camera_mode" default="stereo" doc="stereo or mono"/>
+  <arg name="base_port" default="/dev/ttyACM0"/>
+  <arg name="lidar_port" default="/dev/ttyACM1"/>
+  <arg name="left_sensor_id" default="1"/>
+  <arg name="right_sensor_id" default="0"/>
+  <arg name="mono_sensor_id" default="0"/>
+
+  <include file="$(find jetbot_pro)/launch/semantic_survey.launch">
+    <arg name="map_file" value="$(arg map_file)"/>
+    <arg name="camera_mount" value="$(arg camera_mount)"/>
+    <arg name="initial_pose_x" value="$(arg initial_pose_x)"/>
+    <arg name="initial_pose_y" value="$(arg initial_pose_y)"/>
+    <arg name="initial_pose_a" value="$(arg initial_pose_a)"/>
+    <arg name="bag" value="$(arg bag)"/>
+    <arg name="control_mode" value="$(arg control_mode)"/>
+    <arg name="camera_mode" value="$(arg camera_mode)"/>
+    <arg name="base_port" value="$(arg base_port)"/>
+    <arg name="lidar_port" value="$(arg lidar_port)"/>
+    <arg name="left_sensor_id" value="$(arg left_sensor_id)"/>
+    <arg name="right_sensor_id" value="$(arg right_sensor_id)"/>
+    <arg name="mono_sensor_id" value="$(arg mono_sensor_id)"/>
+  </include>
+</launch>

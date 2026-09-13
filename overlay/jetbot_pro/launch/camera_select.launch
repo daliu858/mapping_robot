@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Project default is now IMX219-83 stereo.  camera_mode:=mono keeps the
+       original IMX219-160 path available for old bags and regression tests. -->
+  <arg name="camera_mode" default="stereo" doc="stereo or mono"/>
+  <!-- Verified on this IMX219-83 PCB: sensor 1 is physical left. -->
+  <arg name="left_sensor_id" default="1"/>
+  <arg name="right_sensor_id" default="0"/>
+  <arg name="mono_sensor_id" default="0"/>
+  <arg name="width" default="640"/>
+  <arg name="height" default="480"/>
+  <!-- Keep the legacy mono path at its historical 20 Hz, but use the
+       robot-verified 30 Hz rate for the unsynchronised stereo pair. -->
+  <arg name="fps"
+       default="$(eval '30' if arg('camera_mode') == 'stereo' else '20')"/>
+  <arg name="left_camera_info_url"
+       default="file://$(find jetbot_pro)/config/camera_calibration/stereo_left_640x480.yaml"/>
+  <arg name="right_camera_info_url"
+       default="file://$(find jetbot_pro)/config/camera_calibration/stereo_right_640x480.yaml"/>
+  <arg name="mono_optical_frame" default="csi_camera_optical"/>
+  <!-- Keep plain navigation/recording light on Jetson Nano.  Launch files
+       that need live metric depth opt in explicitly. -->
+  <arg name="start_stereo_image_proc" default="false"/>
+  <arg name="load_camera_info" default="true"/>
+  <arg name="max_pair_dt_s" default="0.020"/>
+
+  <group if="$(eval arg('camera_mode') == 'stereo')">
+    <include file="$(find jetbot_pro)/launch/stereo_camera.launch">
+      <arg name="left_sensor_id" value="$(arg left_sensor_id)"/>
+      <arg name="right_sensor_id" value="$(arg right_sensor_id)"/>
+      <arg name="width" value="$(arg width)"/>
+      <arg name="height" value="$(arg height)"/>
+      <arg name="fps" value="$(arg fps)"/>
+      <arg name="left_camera_info_url" value="$(arg left_camera_info_url)"/>
+      <arg name="right_camera_info_url" value="$(arg right_camera_info_url)"/>
+      <arg name="start_stereo_image_proc" value="$(arg start_stereo_image_proc)"/>
+      <arg name="load_camera_info" value="$(arg load_camera_info)"/>
+      <arg name="max_pair_dt_s" value="$(arg max_pair_dt_s)"/>
+    </include>
+  </group>
+
+  <group if="$(eval arg('camera_mode') == 'mono')">
+    <include file="$(find jetbot_pro)/launch/csi_camera.launch">
+      <arg name="sensor_id" value="$(arg mono_sensor_id)"/>
+      <arg name="width" value="$(arg width)"/>
+      <arg name="height" value="$(arg height)"/>
+      <arg name="fps" value="$(arg fps)"/>
+      <arg name="frame_id" value="$(arg mono_optical_frame)"/>
+    </include>
+  </group>
+</launch>

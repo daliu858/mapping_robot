@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Printable board: 9x7 squares = 8x6 inner corners, 24 mm squares. -->
+  <arg name="left_sensor_id" default="1"/>
+  <arg name="right_sensor_id" default="0"/>
+  <arg name="width" default="640"/>
+  <arg name="height" default="480"/>
+  <arg name="fps" default="30"/>
+  <arg name="board_columns" default="8"/>
+  <arg name="board_rows" default="6"/>
+  <arg name="square_size_m" default="0.024"/>
+  <arg name="min_samples" default="5"/>
+  <arg name="max_samples" default="5"/>
+  <arg name="max_pair_dt_s" default="0.020"/>
+  <arg name="timeout_s" default="900"/>
+  <!-- Each accepted pair is atomically checkpointed here.  Re-launching with
+       the same directory resumes an interrupted five-shot session. -->
+  <arg name="sample_dir" default="$(env HOME)/.ros/stereo_five_shot_samples"/>
+
+  <include file="$(find jetbot_pro)/launch/stereo_camera.launch">
+    <arg name="left_sensor_id" value="$(arg left_sensor_id)"/>
+    <arg name="right_sensor_id" value="$(arg right_sensor_id)"/>
+    <arg name="width" value="$(arg width)"/>
+    <arg name="height" value="$(arg height)"/>
+    <arg name="fps" value="$(arg fps)"/>
+    <arg name="load_camera_info" value="false"/>
+    <arg name="start_pair_gate" value="true"/>
+    <arg name="start_stereo_image_proc" value="false"/>
+    <arg name="max_pair_dt_s" value="$(arg max_pair_dt_s)"/>
+  </include>
+
+  <!-- required=true makes roslaunch stop both cameras after success/failure,
+       forcing camera_info_manager to reload the new YAML on the next launch. -->
+  <node pkg="jetbot_pro" type="stereo_calibrate_headless.py"
+        name="stereo_calibrate_headless" output="screen" required="true">
+    <param name="board_columns" value="$(arg board_columns)"/>
+    <param name="board_rows" value="$(arg board_rows)"/>
+    <param name="square_size_m" value="$(arg square_size_m)"/>
+    <!-- Output filenames and all downstream launch defaults are 640x480. -->
+    <param name="expected_width" value="640"/>
+    <param name="expected_height" value="480"/>
+    <param name="min_samples" value="$(arg min_samples)"/>
+    <param name="max_samples" value="$(arg max_samples)"/>
+    <param name="quality_min_views" value="5"/>
+    <param name="timeout_s" value="$(arg timeout_s)"/>
+    <param name="sample_dir" value="$(arg sample_dir)"/>
+    <param name="left_topic" value="/stereo/left/image_sync"/>
+    <param name="right_topic" value="/stereo/right/image_sync"/>
+  </node>
+</launch>

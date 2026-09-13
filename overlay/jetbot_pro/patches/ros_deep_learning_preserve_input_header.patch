@@ -1,0 +1,15 @@
+diff --git a/src/node_detectnet.cpp b/src/node_detectnet.cpp
+--- a/src/node_detectnet.cpp
++++ b/src/node_detectnet.cpp
+@@ -141,7 +141,10 @@ void img_callback( const sensor_msgs::ImageConstPtr input )
+ 		}
+ 
+ 		// populate timestamp in header field
+-		msg.header.stamp = ROS_TIME_NOW();
++		// Keep the source image header.  Semantic mapping must associate every
++		// detection with the disparity, odometry, and TF sample for that image;
++		// stamping publication time can silently associate it with another frame.
++		msg.header = input->header;
+ 
+ 		// publish the detection message
+ 		detection_pub->publish(msg);

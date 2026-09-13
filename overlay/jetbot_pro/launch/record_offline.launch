@@ -1,0 +1,84 @@
+<?xml version="1.0"?>
+<!-- Record geometry, poses, and both IMX219-83 streams for PC-side detection
+     and offline stereo reconstruction.  Disparity is intentionally recomputed
+     during replay so the Jetson Nano does not have to store 32FC1 frames.
+
+     Formal use is through semantic_survey.launch, which starts AMCL on the
+     final map and passes that same map_file to this checked recorder.
+-->
+<launch>
+  <arg name="bag" default="$(env HOME)/slam_run_stereo.bag"/>
+  <arg name="map_file"/>
+  <!-- Required measured base_footprint -> optical-frame pose.  It is both
+       recorded in TF and sealed into every transaction marker. -->
+  <arg name="camera_mount"/>
+  <arg name="camera_mode" default="stereo" doc="stereo or mono"/>
+  <arg name="mono_sensor_id" default="0"/>
+  <arg name="left_img_topic" default="/stereo/left/image_raw/compressed"/>
+  <arg name="right_img_topic" default="/stereo/right/image_raw/compressed"/>
+  <arg name="left_info_topic" default="/stereo/left/camera_info"/>
+  <arg name="right_info_topic" default="/stereo/right/camera_info"/>
+  <arg name="mono_img_topic"
+       default="$(eval '/csi_cam_' + str(arg('mono_sensor_id')) + '/image_raw/compressed')"/>
+  <arg name="mono_info_topic"
+       default="$(eval '/csi_cam_' + str(arg('mono_sensor_id')) + '/camera_info')"/>
+  <arg name="require_localization" default="true"/>
+  <!-- Field surveys may deliberately trade centimetre-level localization for
+       completion on repetitive indoor geometry.  Defaults remain strict;
+       semantic_survey.launch can opt into explicitly recorded relaxed gates. -->
+  <arg name="max_amcl_xy_std_m" default="0.75"/>
+  <arg name="max_amcl_yaw_std_rad" default="0.40"/>
+  <arg name="amcl_bad_samples" default="3"/>
+  <arg name="amcl_motion_timeout_s" default="10.0"/>
+
+  <group if="$(eval arg('camera_mode') == 'stereo')">
+    <node pkg="tf" type="static_transform_publisher"
+          name="base_to_stereo_left_optical" required="true"
+          args="$(arg camera_mount) base_footprint stereo_left_optical 20"/>
+    <node pkg="jetbot_pro" type="checked_rosbag_record.py"
+          name="offline_recorder" output="screen" required="true">
+      <param name="bag" value="$(arg bag)"/>
+      <param name="map_file" value="$(arg map_file)"/>
+      <param name="camera_mount" value="$(arg camera_mount)"/>
+      <param name="camera_optical_frame" value="stereo_left_optical"/>
+      <param name="require_localization" value="$(arg require_localization)"/>
+      <param name="max_amcl_xy_std_m" value="$(arg max_amcl_xy_std_m)"/>
+      <param name="max_amcl_yaw_std_rad" value="$(arg max_amcl_yaw_std_rad)"/>
+      <param name="amcl_bad_samples" value="$(arg amcl_bad_samples)"/>
+      <param name="amcl_motion_timeout_s" value="$(arg amcl_motion_timeout_s)"/>
+      <param name="motion_linear_min_mps" value="0.06"/>
+      <param name="motion_odom_topic" value="/odom_raw"/>
+      <param name="recording_status_topic" value="/survey/recording_status"/>
+      <param name="topics_csv"
+             value="/tf,/tf_static,/scan,/odom,/odom_raw,/amcl_pose,/survey/map_image_sha256,/survey/map_manifest_sha256,/survey/recording_status,$(arg left_info_topic),$(arg right_info_topic),$(arg left_img_topic),$(arg right_img_topic)"/>
+      <param name="required_topics_csv"
+             value="/tf,/scan,/odom_raw,$(arg left_info_topic),$(arg right_info_topic),$(arg left_img_topic),$(arg right_img_topic)"/>
+    </node>
+  </group>
+
+  <!-- Preserve the old bag format only for reproducing the monocular baseline. -->
+  <group if="$(eval arg('camera_mode') == 'mono')">
+    <node pkg="tf" type="static_transform_publisher"
+          name="base_to_csi_camera_optical" required="true"
+          args="$(arg camera_mount) base_footprint csi_camera_optical 20"/>
+    <node pkg="jetbot_pro" type="checked_rosbag_record.py"
+          name="offline_recorder_mono" output="screen" required="true">
+      <param name="bag" value="$(arg bag)"/>
+      <param name="map_file" value="$(arg map_file)"/>
+      <param name="camera_mount" value="$(arg camera_mount)"/>
+      <param name="camera_optical_frame" value="csi_camera_optical"/>
+      <param name="require_localization" value="$(arg require_localization)"/>
+      <param name="max_amcl_xy_std_m" value="$(arg max_amcl_xy_std_m)"/>
+      <param name="max_amcl_yaw_std_rad" value="$(arg max_amcl_yaw_std_rad)"/>
+      <param name="amcl_bad_samples" value="$(arg amcl_bad_samples)"/>
+      <param name="amcl_motion_timeout_s" value="$(arg amcl_motion_timeout_s)"/>
+      <param name="motion_linear_min_mps" value="0.06"/>
+      <param name="motion_odom_topic" value="/odom_raw"/>
+      <param name="recording_status_topic" value="/survey/recording_status"/>
+      <param name="topics_csv"
+             value="/tf,/tf_static,/scan,/odom,/odom_raw,/amcl_pose,/survey/map_image_sha256,/survey/map_manifest_sha256,/survey/recording_status,$(arg mono_info_topic),$(arg mono_img_topic)"/>
+      <param name="required_topics_csv"
+             value="/tf,/scan,/odom_raw,$(arg mono_info_topic),$(arg mono_img_topic)"/>
+    </node>
+  </group>
+</launch>

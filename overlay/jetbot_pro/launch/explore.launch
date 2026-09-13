@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!-- 自主探索建图（当前真机默认 gmapping）:
+       1) roslaunch jetbot_pro slam_nav.launch    # gmapping 边建图 + move_base
+       2) roslaunch jetbot_pro explore.launch      # explore_lite 自主探索
+     explore 直接使用当前 SLAM 后端的全量 /map 找 frontier，经 move_base 前往。 -->
+<launch>
+  <!-- explore_lite autonomous exploration, adapted for JetBot Pro (ROS Melodic) -->
+  <node pkg="explore_lite" type="explore" respawn="false" name="explore" output="screen">
+    <param name="robot_base_frame" value="base_footprint"/>
+    <!-- 直接使用 SLAM 全量 /map；gmapping 同时发布 /map_updates。 -->
+    <param name="costmap_topic" value="map"/>
+    <param name="costmap_updates_topic" value="map_updates"/>
+    <param name="visualize" value="true"/>
+    <param name="planner_frequency" value="0.33"/>
+    <param name="progress_timeout" value="45.0"/>
+    <param name="potential_scale" value="3.0"/>
+    <param name="orientation_scale" value="0.0"/>
+    <param name="gain_scale" value="1.0"/>
+    <param name="transform_tolerance" value="1.0"/>
+    <param name="min_frontier_size" value="0.5"/>
+  </node>
+</launch>

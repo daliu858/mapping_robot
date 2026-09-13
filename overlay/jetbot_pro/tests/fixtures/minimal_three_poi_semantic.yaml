@@ -1,0 +1,55 @@
+schema: slam-car-semantic-map-v1
+completed: true
+frame: map
+recording_token: package-test-fixture
+source_bag_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+camera_mount:
+- 0.1
+- 0.0
+- 0.2
+- -1.5708
+- 0.0
+- -1.5708
+map_image_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+map_manifest_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+objects_artifact_sha256: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+topology_artifact_sha256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+poi_contract:
+  schema: slam-car-core-poi-contract-v1
+  complete: true
+  required_labels:
+  - chair
+  - table
+  - door
+  observed_labels:
+  - chair
+  - door
+  - table
+resolution: 0.05
+origin:
+- 0.0
+- 0.0
+- 0.0
+poi:
+- label: chair
+  x: 1.0
+  y: 1.0
+- label: table
+  x: 2.0
+  y: 1.0
+- label: door
+  x: 1.0
+  y: 2.0
+rooms:
+- id: 1
+  status: room
+  semantic: fixture
+  centroid_map:
+  - 1.5
+  - 1.5
+  facilities: []
+  poi: []
+doors: []
+topology: []
+semantic_content_sha256: cc75589a47ff0d8231f72d4ed02499294ad1d0d6fdf1c2b345bcffb2e55c77da
+semantic_manifest_sha256: fd4d40680bad61a7b92d09340cf847a8d0f4aecfd3e5f21c089157c3a3761bc4

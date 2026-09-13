@@ -1,0 +1,19 @@
+<launch>
+  <!-- run_amcl_survey_20260827.sh selects an unused output and exports it.
+       Keeping the pathname out of this file prevents launch/status/deploy
+       scripts from silently disagreeing about the active bag. -->
+  <arg name="bag" default="$(env SURVEY_BAG)"/>
+  <include file="$(find jetbot_pro)/launch/semantic_survey.launch">
+    <arg name="map_file" value="/home/jetbot/maps/home_floor_20260804_glass_fixed.yaml"/>
+    <arg name="camera_mount" value="0.105 0.030 0.094 -1.5708 0 -1.5708"/>
+    <arg name="initial_pose_x" value="-1.975"/>
+    <arg name="initial_pose_y" value="0.375"/>
+    <arg name="initial_pose_a" value="-1.5708"/>
+    <arg name="bag" value="$(arg bag)"/>
+    <arg name="control_mode" value="joystick"/>
+    <arg name="require_localization" value="false"/>
+    <arg name="amcl_motion_timeout_s" value="30.0"/>
+    <arg name="amcl_bad_samples" value="8"/>
+    <arg name="fps" value="15"/>
+  </include>
+</launch>

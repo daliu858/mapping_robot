@@ -1,0 +1,817 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 98166b7..6848e27 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -2,8 +2,11 @@ cmake_minimum_required(VERSION 2.8.3)
+ 
+ project(gscam)
+ 
++add_compile_options(-std=c++11)
++
+ # System Dependencies
+ find_package(PkgConfig)
++find_package(Boost REQUIRED COMPONENTS thread)
+ 
+ pkg_check_modules(GSTREAMER QUIET gstreamer-0.10)
+ if(NOT GSTREAMER_FOUND)
+@@ -13,6 +16,7 @@ if(GSTREAMER_VERSION_1_x)
+   message(STATUS "gst 1.0")
+   pkg_check_modules(GSTREAMER REQUIRED gstreamer-1.0)
+   pkg_check_modules(GST_APP REQUIRED gstreamer-app-1.0)
++  pkg_check_modules(GST_VIDEO REQUIRED gstreamer-video-1.0)
+ else()
+   message(STATUS "gst 0.1")
+   pkg_check_modules(GSTREAMER REQUIRED gstreamer-0.10)
+@@ -28,12 +32,15 @@ if(USE_ROSBUILD)
+   set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
+   set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
+ 
+-  include_directories(${GLIB_INCLUDE_DIRS} ${GST_APP_INCLUDE_DIRS})
++  include_directories(${GLIB_INCLUDE_DIRS} ${GST_APP_INCLUDE_DIRS}
++    ${GST_VIDEO_INCLUDE_DIRS}
++    ${Boost_INCLUDE_DIRS})
+ 
+-  rosbuild_add_library(gscam src/gscam.cpp)
++  rosbuild_add_library(gscam src/gscam.cpp src/raw_image_copy.cpp)
+   target_link_libraries(gscam
+     ${GSTREAMER_LIBRARIES}
+-    ${GST_APP_LIBRARIES})
++    ${GST_APP_LIBRARIES}
++    ${GST_VIDEO_LIBRARIES})
+ 
+   rosbuild_add_executable(gscam_node src/gscam_node.cpp)
+   target_link_libraries(gscam_node gscam
+@@ -44,7 +51,8 @@ if(USE_ROSBUILD)
+   rosbuild_add_library(GSCamNodelet src/gscam_nodelet.cpp)
+   target_link_libraries(GSCamNodelet gscam
+     ${GSTREAMER_LIBRARIES}
+-    ${GST_APP_LIBRARIES})
++    ${GST_APP_LIBRARIES}
++    ${Boost_LIBRARIES})
+ 
+ else()
+   # Use Catkin
+@@ -58,20 +66,23 @@ else()
+     LIBRARIES gscam
+     CATKIN_DEPENDS roscpp nodelet image_transport sensor_msgs
+     camera_calibration_parsers camera_info_manager
+-    DEPENDS GSTREAMER GST_APP
++    DEPENDS GSTREAMER GST_APP GST_VIDEO
+     )
+ 
+   include_directories(
+     include
+     ${catkin_INCLUDE_DIRS}
+     ${GLIB_INCLUDE_DIRS}
+-    ${GST_APP_INCLUDE_DIRS})
++    ${GST_APP_INCLUDE_DIRS}
++    ${GST_VIDEO_INCLUDE_DIRS}
++    ${Boost_INCLUDE_DIRS})
+ 
+-  add_library(gscam src/gscam.cpp)
++  add_library(gscam src/gscam.cpp src/raw_image_copy.cpp)
+   target_link_libraries(gscam
+     ${catkin_LIBRARIES}
+     ${GSTREAMER_LIBRARIES}
+-    ${GST_APP_LIBRARIES})
++    ${GST_APP_LIBRARIES}
++    ${GST_VIDEO_LIBRARIES})
+ 
+   add_executable(gscam_node src/gscam_node.cpp)
+   target_link_libraries(gscam_node gscam
+@@ -84,7 +95,14 @@ else()
+   target_link_libraries(GSCamNodelet gscam
+     ${catkin_LIBRARIES}
+     ${GSTREAMER_LIBRARIES}
+-    ${GST_APP_LIBRARIES})
++    ${GST_APP_LIBRARIES}
++    ${Boost_LIBRARIES})
++
++  if(CATKIN_ENABLE_TESTING)
++    catkin_add_gtest(test_raw_image_copy
++      test/test_raw_image_copy.cpp
++      src/raw_image_copy.cpp)
++  endif()
+ 
+   # Install directives
+ 
+@@ -126,5 +144,3 @@ configure_file(scripts/gscam_node.in ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}
+ file(COPY ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/gscam_node 
+   DESTINATION ${EXECUTABLE_OUTPUT_PATH}
+   FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+-
+-
+diff --git a/Makefile b/Makefile
+index 73e8a91..6acff3b 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,2 +1,2 @@
+-EXTRA_CMAKE_FLAGS = -DUSE_ROSBUILD:BOOL=1
++EXTRA_CMAKE_FLAGS = -DUSE_ROSBUILD:BOOL=1 -DGSTREAMER_VERSION_1_x=On
+ include $(shell rospack find mk)/cmake.mk
+diff --git a/include/gscam/gscam.h b/include/gscam/gscam.h
+index e4b4ee2..735bbf9 100644
+--- a/include/gscam/gscam.h
++++ b/include/gscam/gscam.h
+@@ -16,6 +16,7 @@ extern "C"{
+ #include <sensor_msgs/SetCameraInfo.h>
+ 
+ #include <stdexcept>
++#include <atomic>
+ 
+ namespace gscam {
+ 
+@@ -28,6 +29,7 @@ namespace gscam {
+     bool init_stream();
+     void publish_stream();
+     void cleanup_stream();
++    void stop();
+ 
+     void run();
+ 
+@@ -38,12 +40,15 @@ namespace gscam {
+     // Gstreamer structures
+     GstElement *pipeline_;
+     GstElement *sink_;
++    bool sink_in_pipeline_;
+ 
+     // Appsink configuration
+     bool sync_sink_;
+     bool preroll_;
+     bool reopen_on_eof_;
+     bool use_gst_timestamps_;
++    double sample_timeout_s_;
++    std::atomic<bool> stop_requested_;
+ 
+     // Camera publisher configuration
+     std::string frame_id_;
+diff --git a/package.xml b/package.xml
+index 4d3fa79..630510a 100644
+--- a/package.xml
++++ b/package.xml
+@@ -17,6 +17,7 @@
+ 
+   <build_depend>libgstreamer1.0-dev</build_depend>
+   <build_depend>libgstreamer-plugins-base1.0-dev</build_depend>
++  <build_depend>boost</build_depend>
+ 
+   <build_depend>nodelet</build_depend>
+   <build_depend>cv_bridge</build_depend>
+@@ -27,6 +28,7 @@
+   <build_depend>camera_info_manager</build_depend>
+ 
+   <run_depend>nodelet</run_depend>
++  <run_depend>boost</run_depend>
+   <run_depend>cv_bridge</run_depend>
+   <run_depend>roscpp</run_depend>
+   <run_depend>image_transport</run_depend>
+@@ -40,4 +42,3 @@
+ 
+ 
+ </package>
+-
+diff --git a/src/gscam.cpp b/src/gscam.cpp
+index d0c6cc9..d48639b 100644
+--- a/src/gscam.cpp
++++ b/src/gscam.cpp
+@@ -5,10 +5,16 @@
+ #include <sys/shm.h>
+ 
+ 
++#include <algorithm>
++#include <cmath>
+ #include <iostream>
++#include <limits>
+ extern "C"{
+ #include <gst/gst.h>
+ #include <gst/app/gstappsink.h>
++#if (GST_VERSION_MAJOR == 1)
++#include <gst/video/video.h>
++#endif
+ }
+ 
+ #include <ros/ros.h>
+@@ -26,6 +32,7 @@ extern "C"{
+ #include <camera_calibration_parsers/parse_ini.h>
+ 
+ #include <gscam/gscam.h>
++#include <gscam/raw_image_copy.h>
+ 
+ namespace gscam {
+ 
+@@ -33,6 +40,16 @@ namespace gscam {
+     gsconfig_(""),
+     pipeline_(NULL),
+     sink_(NULL),
++    sink_in_pipeline_(false),
++    sync_sink_(true),
++    preroll_(false),
++    reopen_on_eof_(false),
++    use_gst_timestamps_(false),
++    sample_timeout_s_(2.0),
++    stop_requested_(false),
++    width_(0),
++    height_(0),
++    time_offset_(0.0),
+     nh_(nh_camera),
+     nh_private_(nh_private),
+     image_transport_(nh_camera),
+@@ -42,6 +59,7 @@ namespace gscam {
+ 
+   GSCam::~GSCam()
+   {
++    cleanup_stream();
+   }
+ 
+   bool GSCam::configure()
+@@ -75,6 +93,11 @@ namespace gscam {
+     nh_private_.param("use_gst_timestamps", use_gst_timestamps_, false);
+ 
+     nh_private_.param("reopen_on_eof", reopen_on_eof_, false);
++    nh_private_.param("sample_timeout_s", sample_timeout_s_, 2.0);
++    if (!std::isfinite(sample_timeout_s_) || sample_timeout_s_ < 0.2) {
++      ROS_WARN("sample_timeout_s must be at least 0.2 s; using 0.2 s");
++      sample_timeout_s_ = 0.2;
++    }
+ 
+     // Get the camera parameters file
+     nh_private_.getParam("camera_info_url", camera_info_url_);
+@@ -86,6 +109,7 @@ namespace gscam {
+         image_encoding_ != sensor_msgs::image_encodings::MONO8 && 
+         image_encoding_ != "jpeg") {
+       ROS_FATAL_STREAM("Unsupported image encoding: " + image_encoding_);
++      return false;
+     }
+ 
+     camera_info_manager_.setCameraName(camera_name_);
+@@ -109,6 +133,10 @@ namespace gscam {
+ 
+   bool GSCam::init_stream()
+   {
++    // Idempotently clear any partially constructed pipeline from a previous
++    // failed initialization/reopen attempt.
++    cleanup_stream();
++
+     if(!gst_is_initialized()) {
+       // Initialize gstreamer pipeline
+       ROS_DEBUG_STREAM( "Initializing gstreamer..." );
+@@ -120,14 +148,28 @@ namespace gscam {
+     GError *error = 0; // Assignment to zero is a gst requirement
+ 
+     pipeline_ = gst_parse_launch(gsconfig_.c_str(), &error);
++    if (error) {
++      ROS_FATAL_STREAM(error->message);
++      g_error_free(error);
++      // gst_parse_launch may return a partial pipeline together with an error;
++      // never run that ambiguous graph.
++      cleanup_stream();
++      return false;
++    }
+     if (pipeline_ == NULL) {
+-      ROS_FATAL_STREAM( error->message );
++      ROS_FATAL("gst_parse_launch failed without an error message");
+       return false;
+     }
+ 
+     // Create RGB sink
+     sink_ = gst_element_factory_make("appsink",NULL);
+-    GstCaps * caps = gst_app_sink_get_caps(GST_APP_SINK(sink_));
++    sink_in_pipeline_ = false;
++    if (!sink_) {
++      ROS_FATAL("Could not create GStreamer appsink");
++      cleanup_stream();
++      return false;
++    }
++    GstCaps * caps = NULL;
+ 
+ #if (GST_VERSION_MAJOR == 1)
+     // http://gstreamer.freedesktop.org/data/doc/gstreamer/head/pwg/html/section-types-definitions.html
+@@ -152,6 +194,11 @@ namespace gscam {
+     }
+ #endif
+ 
++    if (!caps) {
++      ROS_FATAL_STREAM("Could not create caps for encoding " << image_encoding_);
++      cleanup_stream();
++      return false;
++    }
+     gst_app_sink_set_caps(GST_APP_SINK(sink_), caps);
+     gst_caps_unref(caps);
+ 
+@@ -164,39 +211,62 @@ namespace gscam {
+ 
+     if(GST_IS_PIPELINE(pipeline_)) {
+       GstPad *outpad = gst_bin_find_unlinked_pad(GST_BIN(pipeline_), GST_PAD_SRC);
+-      g_assert(outpad);
++      if (!outpad) {
++        ROS_FATAL("GStreamer pipeline has no unlinked source pad");
++        cleanup_stream();
++        return false;
++      }
+ 
+       GstElement *outelement = gst_pad_get_parent_element(outpad);
+-      g_assert(outelement);
+       gst_object_unref(outpad);
++      if (!outelement) {
++        ROS_FATAL("Could not get the GStreamer source-pad parent");
++        cleanup_stream();
++        return false;
++      }
+ 
+       if(!gst_bin_add(GST_BIN(pipeline_), sink_)) {
+         ROS_FATAL("gst_bin_add() failed");
+         gst_object_unref(outelement);
+-        gst_object_unref(pipeline_);
++        cleanup_stream();
+         return false;
+       }
++      sink_in_pipeline_ = true;
+ 
+       if(!gst_element_link(outelement, sink_)) {
+         ROS_FATAL("GStreamer: cannot link outelement(\"%s\") -> sink\n", gst_element_get_name(outelement));
+         gst_object_unref(outelement);
+-        gst_object_unref(pipeline_);
++        cleanup_stream();
+         return false;
+       }
+ 
+       gst_object_unref(outelement);
+     } else {
+       GstElement* launchpipe = pipeline_;
+-      pipeline_ = gst_pipeline_new(NULL);
+-      g_assert(pipeline_);
+-
+-      gst_object_unparent(GST_OBJECT(launchpipe));
++      GstElement* wrapper = gst_pipeline_new(NULL);
++      if (!wrapper) {
++        ROS_FATAL("Could not create GStreamer wrapper pipeline");
++        cleanup_stream();
++        return false;
++      }
++      pipeline_ = wrapper;
+ 
+-      gst_bin_add_many(GST_BIN(pipeline_), launchpipe, sink_, NULL);
++      if (!gst_bin_add(GST_BIN(pipeline_), launchpipe)) {
++        ROS_FATAL("Could not add launch element to wrapper pipeline");
++        gst_object_unref(launchpipe);
++        cleanup_stream();
++        return false;
++      }
++      if (!gst_bin_add(GST_BIN(pipeline_), sink_)) {
++        ROS_FATAL("Could not add appsink to wrapper pipeline");
++        cleanup_stream();
++        return false;
++      }
++      sink_in_pipeline_ = true;
+ 
+       if(!gst_element_link(launchpipe, sink_)) {
+         ROS_FATAL("GStreamer: cannot link launchpipe -> sink");
+-        gst_object_unref(pipeline_);
++        cleanup_stream();
+         return false;
+       }
+     }
+@@ -211,8 +281,12 @@ namespace gscam {
+ 
+     gst_element_set_state(pipeline_, GST_STATE_PAUSED);
+ 
+-    if (gst_element_get_state(pipeline_, NULL, NULL, -1) == GST_STATE_CHANGE_FAILURE) {
++    GstStateChangeReturn pause_result = gst_element_get_state(
++        pipeline_, NULL, NULL, 5 * GST_SECOND);
++    if (pause_result == GST_STATE_CHANGE_FAILURE ||
++        pause_result == GST_STATE_CHANGE_ASYNC) {
+       ROS_FATAL("Failed to PAUSE stream, check your gstreamer configuration.");
++      cleanup_stream();
+       return false;
+     } else {
+       ROS_DEBUG_STREAM("Stream is PAUSED.");
+@@ -240,7 +314,10 @@ namespace gscam {
+       //The PAUSE, PLAY, PAUSE, PLAY cycle is to ensure proper pre-roll
+       //I am told this is needed and am erring on the side of caution.
+       gst_element_set_state(pipeline_, GST_STATE_PLAYING);
+-      if (gst_element_get_state(pipeline_, NULL, NULL, -1) == GST_STATE_CHANGE_FAILURE) {
++      GstStateChangeReturn play_result = gst_element_get_state(
++          pipeline_, NULL, NULL, 5 * GST_SECOND);
++      if (play_result == GST_STATE_CHANGE_FAILURE ||
++          play_result == GST_STATE_CHANGE_ASYNC) {
+         ROS_ERROR("Failed to PLAY during preroll.");
+         return;
+       } else {
+@@ -248,7 +325,10 @@ namespace gscam {
+       }
+ 
+       gst_element_set_state(pipeline_, GST_STATE_PAUSED);
+-      if (gst_element_get_state(pipeline_, NULL, NULL, -1) == GST_STATE_CHANGE_FAILURE) {
++      GstStateChangeReturn repause_result = gst_element_get_state(
++          pipeline_, NULL, NULL, 5 * GST_SECOND);
++      if (repause_result == GST_STATE_CHANGE_FAILURE ||
++          repause_result == GST_STATE_CHANGE_ASYNC) {
+         ROS_ERROR("Failed to PAUSE.");
+         return;
+       } else {
+@@ -261,28 +341,50 @@ namespace gscam {
+       return;
+     }
+     ROS_INFO("Started stream.");
++    ros::WallTime last_sample = ros::WallTime::now();
+ 
+     // Poll the data as fast a spossible
+-    while(ros::ok()) 
++    while(ros::ok() && !stop_requested_.load())
+     {
+       // This should block until a new frame is awake, this way, we'll run at the
+       // actual capture framerate of the device.
+       // ROS_DEBUG("Getting data...");
+ #if (GST_VERSION_MAJOR == 1)
+-      GstSample* sample = gst_app_sink_pull_sample(GST_APP_SINK(sink_));
++      // A blocking pull can deadlock shutdown forever when Argus stalls without
++      // EOS.  GStreamer 1.14 on the target supports this bounded pull.
++      GstSample* sample = gst_app_sink_try_pull_sample(
++          GST_APP_SINK(sink_), 200 * GST_MSECOND);
+       if(!sample) {
+-        ROS_ERROR("Could not get gstreamer sample.");
+-        break;
++        if (gst_app_sink_is_eos(GST_APP_SINK(sink_))) {
++          ROS_ERROR("GStreamer stream reached EOS.");
++          break;
++        }
++        if ((ros::WallTime::now() - last_sample).toSec() >=
++            sample_timeout_s_) {
++          ROS_ERROR("No GStreamer sample for %.3f s; failing camera closed.",
++                    sample_timeout_s_);
++          break;
++        }
++        ros::spinOnce();
++        continue;
+       }
++      last_sample = ros::WallTime::now();
+       GstBuffer* buf = gst_sample_get_buffer(sample);
+-      GstMemory *memory = gst_buffer_get_memory(buf, 0);
+-      GstMapInfo info;
+-
+-      gst_memory_map(memory, &info, GST_MAP_READ);
+-      gsize &buf_size = info.size;
+-      guint8* &buf_data = info.data;
++      if(!buf) {
++        ROS_ERROR("GStreamer sample did not contain a buffer.");
++        gst_sample_unref(sample);
++        break;
++      }
++      GstMapInfo info = GST_MAP_INFO_INIT;
++      bool buffer_mapped = false;
++      gsize buf_size = 0u;
++      guint8* buf_data = NULL;
+ #else
+       GstBuffer* buf = gst_app_sink_pull_buffer(GST_APP_SINK(sink_));
++      if(!buf) {
++        ROS_INFO("Stream ended.");
++        break;
++      }
+       guint &buf_size = buf->size;
+       guint8* &buf_data = buf->data;
+ #endif
+@@ -301,24 +403,67 @@ namespace gscam {
+       }
+ #endif
+ 
+-      // Stop on end of stream
+-      if (!buf) {
+-        ROS_INFO("Stream ended.");
+-        break;
+-      }
+-
+       // ROS_DEBUG("Got data.");
+ 
+       // Get the image width and height
+       GstPad* pad = gst_element_get_static_pad(sink_, "sink");
++      if(!pad) {
++        ROS_ERROR("Could not get GStreamer sink pad.");
++#if (GST_VERSION_MAJOR == 1)
++        gst_sample_unref(sample);
++#else
++        gst_buffer_unref(buf);
++#endif
++        break;
++      }
+ #if (GST_VERSION_MAJOR == 1)
+-      const GstCaps *caps = gst_pad_get_current_caps(pad);
++      GstCaps *caps = gst_pad_get_current_caps(pad);
+ #else
+-      const GstCaps *caps = gst_pad_get_negotiated_caps(pad);
++      GstCaps *caps = gst_pad_get_negotiated_caps(pad);
+ #endif
++      if(!caps) {
++        ROS_ERROR("Could not get negotiated GStreamer caps.");
++        gst_object_unref(pad);
++#if (GST_VERSION_MAJOR == 1)
++        gst_sample_unref(sample);
++#else
++        gst_buffer_unref(buf);
++#endif
++        break;
++      }
+       GstStructure *structure = gst_caps_get_structure(caps,0);
+-      gst_structure_get_int(structure,"width",&width_);
+-      gst_structure_get_int(structure,"height",&height_);
++      if (!structure ||
++          !gst_structure_get_int(structure,"width",&width_) ||
++          !gst_structure_get_int(structure,"height",&height_) ||
++          width_ <= 0 || height_ <= 0) {
++        ROS_ERROR("Negotiated GStreamer caps lack valid width/height.");
++        gst_caps_unref(caps);
++        gst_object_unref(pad);
++#if (GST_VERSION_MAJOR == 1)
++        gst_sample_unref(sample);
++#else
++        gst_buffer_unref(buf);
++#endif
++        break;
++      }
++
++#if (GST_VERSION_MAJOR == 1)
++      if (use_gst_timestamps_ && !GST_CLOCK_TIME_IS_VALID(buf->pts)) {
++        ROS_ERROR("GStreamer buffer has no valid PTS; refusing invalid stereo time.");
++        gst_caps_unref(caps);
++        gst_object_unref(pad);
++        gst_sample_unref(sample);
++        break;
++      }
++#else
++      if (use_gst_timestamps_ && !GST_CLOCK_TIME_IS_VALID(buf->timestamp)) {
++        ROS_ERROR("GStreamer buffer has no valid timestamp.");
++        gst_caps_unref(caps);
++        gst_object_unref(pad);
++        gst_buffer_unref(buf);
++        break;
++      }
++#endif
+ 
+       // Update header information
+       sensor_msgs::CameraInfo cur_cinfo = camera_info_manager_.getCameraInfo();
+@@ -335,65 +480,165 @@ namespace gscam {
+       }
+       // ROS_INFO("Image time stamp: %.3f",cinfo->header.stamp.toSec());
+       cinfo->header.frame_id = frame_id_;
++      bool fatal_frame_error = false;
+       if (image_encoding_ == "jpeg") {
+-          sensor_msgs::CompressedImagePtr img(new sensor_msgs::CompressedImage());
+-          img->header = cinfo->header;
+-          img->format = "jpeg";
+-          img->data.resize(buf_size);
+-          std::copy(buf_data, (buf_data)+(buf_size),
+-                  img->data.begin());
+-          jpeg_pub_.publish(img);
+-          cinfo_pub_.publish(cinfo);
++#if (GST_VERSION_MAJOR == 1)
++          // Compressed data has no video-row layout, so map the complete
++          // logical buffer directly.
++          if (!gst_buffer_map(buf, &info, GST_MAP_READ)) {
++              ROS_ERROR("Could not map complete GStreamer JPEG buffer.");
++              fatal_frame_error = true;
++          } else {
++              buffer_mapped = true;
++              buf_size = info.size;
++              buf_data = info.data;
++          }
++#endif
++          if (!fatal_frame_error) {
++              sensor_msgs::CompressedImagePtr img(new sensor_msgs::CompressedImage());
++              img->header = cinfo->header;
++              img->format = "jpeg";
++              img->data.resize(buf_size);
++              std::copy(buf_data, (buf_data)+(buf_size),
++                      img->data.begin());
++              jpeg_pub_.publish(img);
++              cinfo_pub_.publish(cinfo);
++          }
+       } else {
+-          // Complain if the returned buffer is smaller than we expect
+-          const unsigned int expected_frame_size =
+-              image_encoding_ == sensor_msgs::image_encodings::RGB8
+-              ? width_ * height_ * 3
+-              : width_ * height_;
++          const std::size_t bytes_per_pixel =
++              image_encoding_ == sensor_msgs::image_encodings::RGB8 ? 3u : 1u;
++          const std::size_t row_bytes =
++              static_cast<std::size_t>(width_) * bytes_per_pixel;
++          const std::uint8_t* source_data = buf_data;
++          std::size_t source_size = static_cast<std::size_t>(buf_size);
++          std::size_t source_stride = row_bytes;
++          bool layout_valid =
++              row_bytes <= std::numeric_limits<std::uint32_t>::max();
++          std::string layout_error;
++          if (!layout_valid) {
++              layout_error = "active row does not fit sensor_msgs/Image.step";
++          }
+ 
+-          if (buf_size < expected_frame_size) {
+-              ROS_WARN_STREAM( "GStreamer image buffer underflow: Expected frame to be "
+-                      << expected_frame_size << " bytes but got only "
+-                      << (buf_size) << " bytes. (make sure frames are correctly encoded)");
++#if (GST_VERSION_MAJOR == 1)
++          // GstVideoFrame maps the actual plane layout, including custom
++          // GstVideoMeta offsets/strides and buffers backed by multiple memory
++          // blocks. This is safer than treating GstBuffer as tightly packed.
++          GstVideoInfo video_info;
++          gst_video_info_init(&video_info);
++          if (layout_valid && !gst_video_info_from_caps(&video_info, caps)) {
++              layout_valid = false;
++              layout_error = "could not derive raw-video layout from caps";
+           }
+ 
+-          // Construct Image message
+-          sensor_msgs::ImagePtr img(new sensor_msgs::Image());
++          const GstVideoFormat expected_format =
++              image_encoding_ == sensor_msgs::image_encodings::RGB8
++              ? GST_VIDEO_FORMAT_RGB : GST_VIDEO_FORMAT_GRAY8;
++          if (layout_valid &&
++              (GST_VIDEO_INFO_FORMAT(&video_info) != expected_format ||
++               GST_VIDEO_INFO_WIDTH(&video_info) != width_ ||
++               GST_VIDEO_INFO_HEIGHT(&video_info) != height_ ||
++               GST_VIDEO_INFO_N_PLANES(&video_info) != 1u)) {
++              layout_valid = false;
++              layout_error = "negotiated raw-video format/dimensions do not match ROS encoding";
++          }
+ 
+-          img->header = cinfo->header;
++          GstVideoFrame video_frame = {};
++          bool video_frame_mapped = false;
++          if (layout_valid &&
++              !gst_video_frame_map(&video_frame, &video_info, buf,
++                                   GST_MAP_READ)) {
++              layout_valid = false;
++              layout_error = "could not map raw GstVideoFrame";
++          }
++          if (layout_valid) {
++              video_frame_mapped = true;
++              const gint mapped_stride =
++                  GST_VIDEO_FRAME_PLANE_STRIDE(&video_frame, 0);
++              if (GST_VIDEO_FRAME_FORMAT(&video_frame) != expected_format ||
++                  GST_VIDEO_FRAME_WIDTH(&video_frame) != width_ ||
++                  GST_VIDEO_FRAME_HEIGHT(&video_frame) != height_ ||
++                  GST_VIDEO_FRAME_N_PLANES(&video_frame) != 1u ||
++                  GST_VIDEO_FRAME_COMP_PSTRIDE(&video_frame, 0) !=
++                      static_cast<gint>(bytes_per_pixel) ||
++                  mapped_stride <= 0) {
++                  layout_valid = false;
++                  layout_error = "mapped GstVideoFrame format/dimensions/stride are invalid";
++              } else {
++                  source_stride =
++                      static_cast<std::size_t>(mapped_stride);
++              }
++          }
+ 
+-          // Image data and metadata
+-          img->width = width_;
+-          img->height = height_;
+-          img->encoding = image_encoding_;
+-          img->is_bigendian = false;
+-          img->data.resize(expected_frame_size);
++          if (layout_valid) {
++              const std::uint8_t* plane_data =
++                  static_cast<const std::uint8_t*>(
++                      GST_VIDEO_FRAME_PLANE_DATA(&video_frame, 0));
++              const std::uint8_t* map_data = video_frame.map[0].data;
++              const std::uintptr_t plane_address =
++                  reinterpret_cast<std::uintptr_t>(plane_data);
++              const std::uintptr_t map_address =
++                  reinterpret_cast<std::uintptr_t>(map_data);
++              if (!plane_data || !map_data || plane_address < map_address ||
++                  plane_address - map_address > video_frame.map[0].size) {
++                  layout_valid = false;
++                  layout_error = "mapped video plane lies outside its GstMapInfo";
++              } else {
++                  const std::size_t plane_offset = static_cast<std::size_t>(
++                      plane_address - map_address);
++                  source_data = plane_data;
++                  source_size = static_cast<std::size_t>(
++                      video_frame.map[0].size - plane_offset);
++              }
++          }
++#endif
+ 
+-          // Copy only the data we received
+-          // Since we're publishing shared pointers, we need to copy the image so
+-          // we can free the buffer allocated by gstreamer
+-          if (image_encoding_ == sensor_msgs::image_encodings::RGB8) {
+-              img->step = width_ * 3;
++          sensor_msgs::ImagePtr img(new sensor_msgs::Image());
++          std::string copy_error;
++          const bool copied = layout_valid &&
++              copyRawImageRows(source_data, source_size, 0u, source_stride,
++                               row_bytes, static_cast<std::size_t>(height_),
++                               &img->data, &copy_error);
++#if (GST_VERSION_MAJOR == 1)
++          if (video_frame_mapped) {
++              gst_video_frame_unmap(&video_frame);
++          }
++#endif
++          if (!copied) {
++              ROS_ERROR_STREAM("Invalid GStreamer raw image layout; stopping "
++                               "camera without publishing a corrupt frame: "
++                               << (layout_valid ? copy_error : layout_error));
++              fatal_frame_error = true;
+           } else {
+-              img->step = width_;
++              // ROS images are intentionally tightly packed even when the
++              // GStreamer buffer contains row padding.
++              img->header = cinfo->header;
++              img->width = width_;
++              img->height = height_;
++              img->encoding = image_encoding_;
++              img->is_bigendian = false;
++              img->step = static_cast<std::uint32_t>(row_bytes);
++              camera_pub_.publish(img, cinfo);
+           }
+-          std::copy(
+-                  buf_data,
+-                  (buf_data)+(buf_size),
+-                  img->data.begin());
+-
+-          // Publish the image/info
+-          camera_pub_.publish(img, cinfo);
+       }
+ 
+-      // Release the buffer
+-      if(buf) {
++      // gst_element_get_static_pad() and gst_pad_get_*_caps() both return
++      // owned references.  Release them on every frame.
++      gst_caps_unref(caps);
++      gst_object_unref(pad);
++
++      // GStreamer 1.x: sample owns the buffer returned by
++      // gst_sample_get_buffer(), so release the sample rather than unref'ing
++      // the borrowed buffer.
+ #if (GST_VERSION_MAJOR == 1)
+-        gst_memory_unmap(memory, &info);
+-        gst_memory_unref(memory);
++      if (buffer_mapped)
++        gst_buffer_unmap(buf, &info);
++      gst_sample_unref(sample);
++#else
++      gst_buffer_unref(buf);
+ #endif
+-        gst_buffer_unref(buf);
+-      }
++
++      if (fatal_frame_error)
++        break;
+ 
+       ros::spinOnce();
+     }
+@@ -401,17 +646,29 @@ namespace gscam {
+ 
+   void GSCam::cleanup_stream()
+   {
+-    // Clean up
++    if (!pipeline_ && !sink_)
++      return;
+     ROS_INFO("Stopping gstreamer pipeline...");
+     if(pipeline_) {
+       gst_element_set_state(pipeline_, GST_STATE_NULL);
+       gst_object_unref(pipeline_);
+       pipeline_ = NULL;
+     }
++    // Once added to the pipeline, the bin owns the sink reference and the
++    // pipeline unref above releases it.  Before that point we own it directly.
++    if (sink_ && !sink_in_pipeline_)
++      gst_object_unref(sink_);
++    sink_ = NULL;
++    sink_in_pipeline_ = false;
++  }
++
++  void GSCam::stop()
++  {
++    stop_requested_.store(true);
+   }
+ 
+   void GSCam::run() {
+-    while(ros::ok()) {
++    while(ros::ok() && !stop_requested_.load()) {
+       if(!this->configure()) {
+         ROS_FATAL("Failed to configure gscam!");
+         break;
+@@ -419,6 +676,7 @@ namespace gscam {
+ 
+       if(!this->init_stream()) {
+         ROS_FATAL("Failed to initialize gscam stream!");
++        this->cleanup_stream();
+         break;
+       }
+ 
+diff --git a/src/gscam_nodelet.cpp b/src/gscam_nodelet.cpp
+index 2bd5fa7..ce5c5ba 100644
+--- a/src/gscam_nodelet.cpp
++++ b/src/gscam_nodelet.cpp
+@@ -16,7 +16,10 @@ namespace gscam {
+ 
+   GSCamNodelet::~GSCamNodelet() 
+   {
+-    stream_thread_->join();
++    if (gscam_driver_)
++      gscam_driver_->stop();
++    if (stream_thread_ && stream_thread_->joinable())
++      stream_thread_->join();
+   }
+ 
+   void GSCamNodelet::onInit()

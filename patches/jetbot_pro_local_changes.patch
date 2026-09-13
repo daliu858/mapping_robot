@@ -1,0 +1,1872 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4f45e51..dcb93b6 100755
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0.2)
+ project(jetbot_pro)
+ 
+ ## Compile as C++11, supported in ROS Kinetic and newer
+-# add_compile_options(-std=c++11)
++add_compile_options(-std=c++11)
+ 
+ ## Find catkin macros and libraries
+ ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
+@@ -10,6 +10,7 @@ project(jetbot_pro)
+ find_package(catkin REQUIRED COMPONENTS
+   dynamic_reconfigure
+   geometry_msgs
++  message_generation
+   nav_msgs
+   roscpp
+   rospy
+@@ -18,8 +19,9 @@ find_package(catkin REQUIRED COMPONENTS
+   tf
+ )
+ 
+-## System dependencies are found with CMake's conventions
+-# find_package(Boost REQUIRED COMPONENTS system)
++## System dependencies used directly by jetbot.cpp
++find_package(Boost REQUIRED COMPONENTS system)
++find_package(Threads REQUIRED)
+ 
+ 
+ ## Uncomment this if the package has a setup.py. This macro ensures
+@@ -59,11 +61,10 @@ find_package(catkin REQUIRED COMPONENTS
+ # )
+ 
+ ## Generate services in the 'srv' folder
+-# add_service_files(
+-#   FILES
+-#   Service1.srv
+-#   Service2.srv
+-# )
++add_service_files(
++  FILES
++  FinalizeSemanticMap.srv
++)
+ 
+ ## Generate actions in the 'action' folder
+ # add_action_files(
+@@ -73,10 +74,7 @@ find_package(catkin REQUIRED COMPONENTS
+ # )
+ 
+ ## Generate added messages and services with any dependencies listed here
+-# generate_messages(
+-#   DEPENDENCIES
+-#   geometry_msgs#   nav_msgs#   sensor_msgs#   std_msgs
+-# )
++generate_messages()
+ 
+ ################################################
+ ## Declare ROS dynamic reconfigure parameters ##
+@@ -113,9 +111,9 @@ generate_dynamic_reconfigure_options(
+ ## CATKIN_DEPENDS: catkin_packages dependent projects also need
+ ## DEPENDS: system dependencies of this project that dependent projects also need
+ catkin_package(
+-#  INCLUDE_DIRS include
++  INCLUDE_DIRS include
+ #  LIBRARIES jetbot_pro
+-#  CATKIN_DEPENDS dynamic_reconfigure geometry_msgs nav_msgs roscpp rospy sensor_msgs std_msgs tf
++  CATKIN_DEPENDS message_runtime
+ #  DEPENDS system_lib
+ )
+ 
+@@ -126,8 +124,9 @@ catkin_package(
+ ## Specify additional locations of header files
+ ## Your package locations should be listed before other locations
+ include_directories(
+-# include
++  include
+   ${catkin_INCLUDE_DIRS}
++  ${Boost_INCLUDE_DIRS}
+ )
+ 
+ ## Declare a C++ library
+@@ -169,10 +168,38 @@ include_directories(
+ 
+ ## Mark executable scripts (Python etc.) for installation
+ ## in contrast to setup.py, you can choose the destination
+-# catkin_install_python(PROGRAMS
+-#   scripts/my_python_script
+-#   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+-# )
++catkin_install_python(PROGRAMS
++  scripts/aiui.py
++  scripts/calibrate_angular.py
++  scripts/calibrate_linear.py
++  scripts/keyboard_teleop.py
++  scripts/joy_teleop.py
++  scripts/detection_publisher.py
++  scripts/ginput.py
++  scripts/iat.py
++  scripts/laser_avoidance.py
++  scripts/laser_filter.py
++  scripts/laser_tracking.py
++  scripts/laser_warning.py
++  scripts/odom_ekf.py
++  scripts/replay_contract.py
++  scripts/offline_replay_runner.py
++  scripts/checked_slam_capture.py
++  scripts/checked_rosbag_record.py
++  scripts/bounded_motion_probe.py
++  scripts/map_identity.py
++  scripts/semantic_mapper.py
++  scripts/scan_watchdog.py
++  scripts/scan_clip.py
++  scripts/scan_clip_core.py
++  scripts/stereo_calibrate_headless.py
++  scripts/stereo_calibration_core.py
++  scripts/stereo_pair_gate.py
++  scripts/tts_cn.py
++  scripts/tts_en.py
++  scripts/vad.py
++  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
++)
+ 
+ ## Mark executables for installation
+ ## See http://docs.ros.org/melodic/api/catkin/html/howto/format1/building_executables.html
+@@ -189,18 +216,31 @@ include_directories(
+ # )
+ 
+ ## Mark cpp header files for installation
+-# install(DIRECTORY include/${PROJECT_NAME}/
+-#   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+-#   FILES_MATCHING PATTERN "*.h"
+-#   PATTERN ".svn" EXCLUDE
+-# )
++install(DIRECTORY include/${PROJECT_NAME}/
++  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
++  FILES_MATCHING PATTERN "*.hpp"
++)
+ 
+ ## Mark other files for installation (e.g. launch and bag files, etc.)
+-# install(FILES
+-#   # myfile1
+-#   # myfile2
+-#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+-# )
++install(DIRECTORY launch/
++  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
++  FILES_MATCHING PATTERN "*.launch"
++)
++
++install(DIRECTORY config patches rviz
++  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
++)
++
++install(DIRECTORY maps/
++  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/maps
++  FILES_MATCHING PATTERN "*.yaml" PATTERN "*.pgm"
++)
++
++install(PROGRAMS
++  maps/carto_savemap.sh
++  maps/savemap.sh
++  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/maps
++)
+ 
+ #############
+ ## Testing ##
+@@ -213,7 +253,26 @@ include_directories(
+ # endif()
+ 
+ ## Add folders to be run by python nosetests
+-# catkin_add_nosetests(test)
++if(CATKIN_ENABLE_TESTING)
++  catkin_add_gtest(test_base_safety tests/test_base_safety.cpp)
++  catkin_add_nosetests(tests/test_stereo_geometry.py)
++  catkin_add_nosetests(tests/test_camera_launch_defaults.py)
++  catkin_add_nosetests(tests/test_stereo_calibration_core.py)
++  catkin_add_nosetests(tests/test_stereo_calibration_helpers.py)
++  catkin_add_nosetests(tests/test_pipeline_contracts.py)
++  catkin_add_nosetests(tests/test_bounded_motion_probe.py)
++  catkin_add_nosetests(tests/test_offline_transactions.py)
++  catkin_add_nosetests(tests/test_detection_timestamp_matching.py)
++  catkin_add_nosetests(tests/test_replay_contract.py)
++endif()
+ 
+ add_executable(jetbot src/jetbot.cpp)
+-target_link_libraries(jetbot ${catkin_LIBRARIES})
++add_dependencies(jetbot ${PROJECT_NAME}_gencfg ${PROJECT_NAME}_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
++target_link_libraries(jetbot
++  ${catkin_LIBRARIES}
++  ${Boost_LIBRARIES}
++  ${CMAKE_THREAD_LIBS_INIT}
++)
++install(TARGETS jetbot
++  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
++)
+diff --git a/README.md b/README.md
+index 8d13093..bc9f61e 100644
+--- a/README.md
++++ b/README.md
+@@ -1,11 +1,78 @@
+-# jetbot_pro
++# JetBot 室内语义地图采集系统
+ 
+-![image](https://www.waveshare.net/photo/development-board/JetBot-ROS-AI-Kit/JetBot-ROS-AI-Kit-details-1.jpg)
+-A ROS package of the WaveShare JetBot ROS AI Kit. An educational AI robot based on NVIDIA Jetson Nano.
++本包面向 Jetson Nano 4GB + RPLIDAR A1 + IMX219-83 双目相机。系统的交付物是供学生查看和使用的室内语义地图，不包含“根据语义标签自动巡航到目标”的产品功能。
+ 
+-## Website
++正式闭环只有一趟实体采集：
+ 
+-* Chinese：[http://www.waveshare.net/shop/JetBot-ROS-AI-Kit.htm](http://www.waveshare.net/shop/JetBot-ROS-AI-Kit.htm)
+-* English：[http://www.waveshare.com/JetBot-ROS-AI-Kit.htm](http://www.waveshare.com/JetBot-ROS-AI-Kit.htm)
++```text
++gmapping 建图 + 双目/雷达/里程计/TF 录包
++                     ↓
++电脑端 LLMDet-Large 开放词汇检测
++                     ↓
++离线双目深度 + SLAM TF 投影
++                     ↓
++chair / table / door 标签叠加到 occupancy grid
++                     ↓
++房间、门、连通关系与可视化语义地图
++```
+ 
++## 已验证硬件约定
+ 
++- 左相机：`sensor-id=1`
++- 右相机：`sensor-id=0`
++- 双目采集：`640x480 @ 30 FPS`
++- 标定基线约 `60.06 mm`
++- 相机外参：启动时必须显式提供 `camera_mount="x y z yaw pitch roll"`
++- 实时阶段不运行 `stereo_image_proc` 或视觉大模型；深度和检测均在录制后处理
++
++## 一趟式采集
++
++每次使用新的 bag 和地图文件名；程序拒绝覆盖旧结果。开跑前 Jetson 至少保留 `2.5 GiB` 空间。
++
++```bash
++roslaunch jetbot_pro slam_capture.launch \
++  bag:=/home/jetbot/captures/home_RUN_ID.bag \
++  map_file:=/home/jetbot/maps/home_RUN_ID.yaml \
++  camera_mount:="0.105 0.030 0.094 -1.5708 0 -1.5708"
++```
++
++该入口只启动底盘、LiDAR、gmapping、双目相机和原子录包器，不启动 AMCL、`move_base` 或 TEB。运动由一个受监督的外部 `/cmd_vel` 控制源提供；如已连接手柄，可追加 `start_joystick:=true`。
++
++巡视完成后先停车，保持至少三秒，然后提交：
++
++```bash
++rosservice call /slam_capture/complete "{}"
++```
++
++录包器随后自动完成：保存最终 PGM/YAML、校验地图、把地图哈希和事务标记写入仍在录制的 staging bag、正常关闭并只读复核，最后才原子提交正式 bag。只有同时存在 `.bag`、地图 YAML/PGM 和 `.complete.json` 才算成功。
++
++## 电脑端检测
++
++```powershell
++D:\gd_env\Scripts\python.exe tools\offline_preflight.py `
++  --bag data\home_RUN_ID.bag --map-file maps\home_RUN_ID.yaml `
++  --hf-home D:\hf_cache --local-only
++
++D:\gd_env\Scripts\python.exe tools\groundingdino_detect.py `
++  --bag data\home_RUN_ID.bag --out data\detections_RUN_ID.json `
++  --model iSEE-Laboratory/llmdet_large `
++  --stride 10 --skip-doorplates --hf-home D:\hf_cache --local-only
++```
++
++## 离线投影
++
++```bash
++roslaunch jetbot_pro semantic_map_offline.launch \
++  bag:=/home/jetbot/captures/home_RUN_ID.bag \
++  det_file:=/home/jetbot/detections_RUN_ID.json \
++  map_file:=/home/jetbot/maps/home_RUN_ID.yaml \
++  output_file:=/home/jetbot/semantic_objects_RUN_ID.yaml
++```
++
++离线融合使用 bag 中的 `map -> odom -> base_footprint -> stereo_left_optical` TF 链，不依赖 `/amcl_pose`。
++
++## 功能边界
++
++- 保留：SLAM、双目采集、开放词汇检测、POI 投影、房间分割、拓扑表和可视化语义地图。
++- 删除：语义目标选择、AMCL 语义巡检、POI 自动导航、多点自动巡航和无全局记忆的反应式游走。
++- `slam_nav.launch + explore.launch` 仍作为可选的自主建图实验保留；它使用 `move_base/TEB`，不属于正式的一趟式 demo。
+diff --git a/config/cartographer/jetbot.lua b/config/cartographer/jetbot.lua
+index 5b505c6..63f7448 100644
+--- a/config/cartographer/jetbot.lua
++++ b/config/cartographer/jetbot.lua
+@@ -20,11 +20,14 @@ options = {
+   trajectory_builder = TRAJECTORY_BUILDER,
+   map_frame = "map",
+   tracking_frame = "base_footprint",
+-  published_frame = "base_footprint",
++  -- robot_pose_ekf owns odom -> base_footprint.  Cartographer must consume
++  -- that odometry and publish only map -> odom; otherwise two nodes publish
++  -- the same TF edge.
++  published_frame = "odom",
+   odom_frame = "odom",
+-  provide_odom_frame = true,
++  provide_odom_frame = false,
+   publish_frame_projected_to_2d = false,
+-  use_odometry = false,
++  use_odometry = true,
+   use_nav_sat = false,
+   use_landmarks = false,
+   num_laser_scans = 1,
+diff --git a/config/diff/base_global_planner_param.yaml b/config/diff/base_global_planner_param.yaml
+index 5ffca16..a8d88af 100755
+--- a/config/diff/base_global_planner_param.yaml
++++ b/config/diff/base_global_planner_param.yaml
+@@ -9,9 +9,9 @@ GlobalPlanner:                                  # Also see: http://wiki.ros.org/
+   use_dijkstra: true                            # Use dijkstra's algorithm. Otherwise, A*, default true
+   use_grid_path: false                          # Create a path that follows the grid boundaries. Otherwise, use a gradient descent method, default false
+   
+-  allow_unknown:  true                          # Allow planner to plan through unknown space, default true
++  allow_unknown:  false                         # Final-map navigation must never route through unknown space
+                                                 #Needs to have track_unknown_space: true in the obstacle / voxel layer (in costmap_commons_param) to work
+   planner_window_x: 0.0                         # default 0.0
+   planner_window_y: 0.0                         # default 0.0
+-  default_tolerance: 0.0                        # If goal in obstacle, plan to the closest point in radius default_tolerance, default 0.0
++  default_tolerance: 0.50                        # Start pose sits ~7 cm from a mapped obstacle; let the planner snap.
+   
+diff --git a/config/diff/costmap_common_params.yaml b/config/diff/costmap_common_params.yaml
+index f170f1b..170c631 100755
+--- a/config/diff/costmap_common_params.yaml
++++ b/config/diff/costmap_common_params.yaml
+@@ -1,4 +1,9 @@
+-robot_radius: 0.12
++# Physical footprint: 0.14 m circle including the chassis/camera-board
++# overhang.  This is the single source of truth for the LOCAL costmap and it
++# matches the TEB footprint_model radius.  The global costmap deliberately
++# overrides it to 0.12 (see global_costmap_params.yaml for the start-pocket
++# escape reasoning) -- do not "unify" that override away.
++robot_radius: 0.14
+ 
+ obstacle_layer:
+   enabled: true
+@@ -6,7 +11,6 @@ obstacle_layer:
+   min_obstacle_height: 0.0
+   obstacle_range: 2.0
+   raytrace_range: 5.0
+-  inflation_radius: 0.10
+   combination_method: 1
+   observation_sources: laser_scan_sensor 
+   track_unknown_space: true
+@@ -25,7 +29,9 @@ obstacle_layer:
+     topic: /scan
+     marking: true
+     clearing: true
+-    expected_update_rate: 0
++    # Mark the costmap non-current if the live safety scan stops.  move_base
++    # then refuses to continue controlling from stale obstacle data.
++    expected_update_rate: 3.0
+     min_obstacle_height: 0.00
+     max_obstacle_height: 0.30
+ 
+@@ -47,12 +53,13 @@ obstacle_layer:
+     max_obstacle_height: 0.2
+     observation_persistence: 0.0
+ 
+-inflation_layer:
+-  enabled:              true
+-  cost_scaling_factor:  10.0  # exponential rate at which the obstacle cost drops off (default: 10)
+-  inflation_radius:     0.20 # max. distance from an obstacle at which costs are incurred for planning paths.
++# Inflation is deliberately NOT configured here.  move_base.launch loads this
++# file first, then local_costmap_params.yaml / global_costmap_params.yaml,
++# whose inflation_layer blocks (0.10 / 2.5) override anything written in this
++# file at runtime.  A 0.22 block that used to live here was dead at runtime
++# yet read as authoritative -- that file-level ambiguity is what this comment
++# replaces.  The live values are owned by the per-costmap files only.
+ 
+ static_layer:
+   enabled:              true
+   map_topic:            "/map"
+-
+diff --git a/config/diff/global_costmap_params.yaml b/config/diff/global_costmap_params.yaml
+index ed15250..7b016cc 100755
+--- a/config/diff/global_costmap_params.yaml
++++ b/config/diff/global_costmap_params.yaml
+@@ -3,11 +3,25 @@ global_costmap:
+    robot_base_frame: base_footprint
+    update_frequency: 1.5
+    publish_frequency: 1.0
+-   static_map: true
+    rolling_window: false
+    resolution: 0.05
+    transform_tolerance: 1.2
+-   map_type: costmap
++   # DELIBERATE override of the physical 0.14 m radius (costmap_common).
++   # Start pose sits ~7 cm from a mapped obstacle (map res 0.05).  costmap_2d
++   # marks every cell closer than robot_radius to an obstacle INSCRIBED (253)
++   # and global_planner treats 253 as impassable.  With 0.14 the start cell's
++   # neighbours at 0.05/0.10 m all sit inside the 253 band, so no plan can
++   # ever leave the pocket; with 0.12 the first cell 0.12 m out is passable.
++   # This trades planner optimism for escape ability -- the LOCAL costmap and
++   # TEB keep the true 0.14 m footprint, so execution stays physical.
++   robot_radius: 0.12
++   plugins:
++     - {name: static_layer, type: "costmap_2d::StaticLayer"}
++     - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
++   inflation_layer:
++      inflation_radius: 0.10
++      cost_scaling_factor: 2.5
+ 
+ GlobalPlanner:        
+-   allow_unknown:  true
++   allow_unknown:  false
++   default_tolerance: 0.50
+diff --git a/config/diff/local_costmap_params.yaml b/config/diff/local_costmap_params.yaml
+index 56407c1..6d90fd6 100755
+--- a/config/diff/local_costmap_params.yaml
++++ b/config/diff/local_costmap_params.yaml
+@@ -10,8 +10,16 @@ local_costmap:
+    resolution: 0.05
+    transform_tolerance: 1.2
+    #   map_type: costmap
++   # No robot_radius here on purpose: the local costmap inherits the physical
++   # 0.14 m footprint from costmap_common_params.yaml (loaded first into this
++   # namespace).  Only the global costmap narrows it (see its file).
+ 
+    plugins:
+-   - {name: static_layer,        type: "costmap_2d::StaticLayer"}
++   # The rolling odom-frame local window must contain only live obstacles.
++   # Copying the map-frame StaticLayer here leaves dragged/duplicated obstacle
++   # edges whenever map->odom is corrected and was a source of TEB rejection.
+    - {name: obstacle_layer,      type: "costmap_2d::VoxelLayer"}
+    - {name: inflation_layer,     type: "costmap_2d::InflationLayer"}
++   inflation_layer:
++      inflation_radius: 0.10
++      cost_scaling_factor: 2.5
+diff --git a/config/diff/move_base_params.yaml b/config/diff/move_base_params.yaml
+index 99fc04f..e054652 100755
+--- a/config/diff/move_base_params.yaml
++++ b/config/diff/move_base_params.yaml
+@@ -1,10 +1,10 @@
+ shutdown_costmaps: false
+ 
+ controller_frequency: 4.0
+-controller_patience: 3.0
++controller_patience: 8.0
+ 
+ planner_frequency: 1.0
+-planner_patience: 3.0
++planner_patience: 8.0
+ 
+ oscillation_timeout: 5.0
+ oscillation_distance: 0.1
+@@ -13,10 +13,10 @@ oscillation_distance: 0.1
+ base_global_planner: "global_planner/GlobalPlanner"  
+ base_local_planner: "teb_local_planner/TebLocalPlannerROS"
+ 
+-max_planning_retries: 1
++max_planning_retries: 5
+ 
+ recovery_behavior_enabled: true
+-clearing_rotation_allowed: true
++clearing_rotation_allowed: false
+ 
+ recovery_behaviors:
+   - name: 'conservative_reset'
+@@ -25,8 +25,9 @@ recovery_behaviors:
+   #  type: 'clear_costmap_recovery/ClearCostmapRecovery'
+   #- name: 'super_reset'
+   #  type: 'clear_costmap_recovery/ClearCostmapRecovery'
+-  - name: 'clearing_rotation'
+-    type: 'rotate_recovery/RotateRecovery'
++  # Deliberately no RotateRecovery on the first residential run: a blind
++  # near-full turn around chair legs/cables is riskier than abandoning a
++  # frontier and selecting another one.
+   #- name: 'move_slow_and_clear'
+     #type: 'move_slow_and_clear/MoveSlowAndClear'
+     
+@@ -50,5 +51,3 @@ move_slow_and_clear:
+   limited_trans_speed: 0.1
+   limited_rot_speed: 0.4
+   limited_distance: 0.3
+-
+-
+diff --git a/config/diff/teb_local_planner_params.yaml b/config/diff/teb_local_planner_params.yaml
+index 9c36c24..7a86209 100755
+--- a/config/diff/teb_local_planner_params.yaml
++++ b/config/diff/teb_local_planner_params.yaml
+@@ -1,6 +1,8 @@
+ TebLocalPlannerROS:
+ 
+- odom_topic: odom
++ # /odom is a pose-only robot_pose_ekf republish in this robot.  TEB needs the
++ # measured wheel velocity carried by the base driver's raw odometry.
++ odom_topic: /odom_raw
+  #odom_topic: /robot_pose_ekf/odom_combined
+  map_frame: odom
+  #map_frame: /odom_combined
+@@ -12,20 +14,29 @@ TebLocalPlannerROS:
+  dt_hysteresis: 0.1
+  global_plan_overwrite_orientation: True
+  max_global_plan_lookahead_dist: 3.0
+- feasibility_check_no_poses: 5
++ # Feasibility runs the full costmap footprint check (radius 0.14 against
++ # inflation cost, not the 0.05 soft margin below).  With dt_ref 0.45 s and
++ # max_vel_x 0.18, five poses reach ~0.4 m ahead, deep inside the 0.29--0.32 m
++ # doorways where inflated cost is unavoidable -- the 8/27 "valid control
++ # could not be found" shape.  Two poses (~0.16 m, about one robot length)
++ # still reject trajectories that start inside an obstacle.
++ feasibility_check_no_poses: 2
+ 
+  # Robot
+ 
+- max_vel_x: 0.7
+-# max_vel_x: 0.7
+- max_vel_x_backwards: 0.35
+- max_vel_theta: 2.5
+-# max_vel_theta: 1.5
+- acc_lim_x: 1.20
+- acc_lim_theta: 1.5
++ # Conservative indoor exploration limits for the real JetBot.  The original
++ # 0.7 m/s / 2.5 rad/s values are too aggressive around furniture and doors.
++ max_vel_x: 0.18
++ max_vel_x_backwards: 0.12
++ # In-place spinning was the 8/4 AMCL second-pass failure mode.  Keep yaw
++ # slow enough that a rejected TEB plan cannot whip the chassis around.
++ max_vel_theta: 0.40
++ acc_lim_x: 0.25
++ acc_lim_theta: 0.50
+  min_turning_radius: 0.0
+  footprint_model:  # types: "point", "circular", "two_circles", "line", "polygon"
+-   radius: 0.12    # for type "circular"
++   type: circular
++   radius: 0.14    # includes the real chassis/camera-board overhang
+    #vertices: [[-0.12, -0.12], [-0.12, 0.12],[0.12, 0.12], [0.12, -0.12]]
+    #vertices: [[-0.1, -0.26], [-0.1, 0.26],[0.287, 0.26], [0.287, -0.26]]
+ 
+@@ -37,9 +48,24 @@ TebLocalPlannerROS:
+ 
+  # Obstacles
+ 
+- min_obstacle_dist: 0.20
++ # min_obstacle_dist is a SOFT margin between the 0.14 m circular footprint
++ # edge and obstacles (g2o penalty with penalty_epsilon 0.1, weight_obstacle
++ # 50) -- it is not a hard clearance.  Robot diameter is 0.28 m and the
++ # measured north doorway is 0.29--0.32 m wide, so the physical per-side gap
++ # is 0.005--0.02 m.  A 0.12 m margin would demand a 0.14+0.12=0.26 m
++ # centreline clearance, i.e. a >=0.52 m doorway: mathematically impossible
++ # here and one driver of the 8/27 "valid control could not be found" streak.
++ # 0.05 keeps the doorway penalty small enough to optimize through while the
++ # hard collision check stays with the 0.14 m footprint itself.
++ min_obstacle_dist: 0.05
+  include_costmap_obstacles: True
+- costmap_obstacles_behind_robot_dist: 1.0
++ # Only obstacles the robot is about to sweep matter for a forward-drive plan
++ # (weight_kinematics_forward_drive 100, backward vel capped at 0.12).  The
++ # shipped 1.0 m pulled the sofa legs ~0.28 m behind the start pose (bag 17
++ # geometry) into every TEB graph at the pocket, adding rear penalty terms
++ # that helped reject otherwise-valid forward controls.  0.2 m keeps obstacles
++ # just behind the footprint for reversing feasibility and drops the sofa.
++ costmap_obstacles_behind_robot_dist: 0.2
+  obstacle_poses_affected: 7
+  costmap_converter_plugin: ""
+  costmap_converter_spin_thread: True
+@@ -57,7 +83,7 @@ TebLocalPlannerROS:
+  weight_acc_lim_x: 1
+  weight_acc_lim_theta: 1
+  weight_kinematics_nh: 1000
+- weight_kinematics_forward_drive: 60
++ weight_kinematics_forward_drive: 100
+  weight_kinematics_turning_radius: 1
+  weight_optimaltime: 1
+  weight_obstacle: 50
+diff --git a/launch/amcl.launch b/launch/amcl.launch
+index 115c776..db278d4 100644
+--- a/launch/amcl.launch
++++ b/launch/amcl.launch
+@@ -1,42 +1,55 @@
+-<?xml version="1.0"?>
+-<launch>
+-  <node pkg="amcl" type="amcl" name="amcl" respawn="false">
+-    <param name="use_map_topic"             value="true"/>
+-    <remap from="scan"                      to="scan"/>
+-    <!-- Publish scans from best pose at a max of 10 Hz -->
+-    <param name="odom_model_type"           value="diff"/>
+-    <param name="odom_alpha5"               value="0.1"/>
+-    <param name="gui_publish_rate"          value="10.0"/>
+-    <param name="laser_max_beams"             value="30"/>
+-    <param name="min_particles"             value="500"/>
+-    <param name="max_particles"             value="5000"/>
+-    <param name="kld_err"                   value="0.05"/>
+-    <param name="kld_z"                     value="0.99"/>
+-    <param name="odom_alpha1"               value="0.2"/>
+-    <param name="odom_alpha2"               value="0.2"/>
+-    <!-- translation std dev, m -->
+-    <param name="odom_alpha3"               value="0.8"/>
+-    <param name="odom_alpha4"               value="0.2"/>
+-    <param name="laser_z_hit"               value="0.5"/>
+-    <param name="laser_z_short"             value="0.05"/>
+-    <param name="laser_z_max"               value="0.05"/>
+-    <param name="laser_z_rand"              value="0.5"/>
+-    <param name="laser_sigma_hit"           value="0.2"/>
+-    <param name="laser_lambda_short"        value="0.1"/>
+-    <param name="laser_model_type"          value="likelihood_field"/>
+-    <!-- <param name="laser_model_type" value="beam"/> -->
+-    <param name="laser_likelihood_max_dist" value="2.0"/>
+-    <param name="update_min_d"              value="0.2"/>
+-    <param name="update_min_a"              value="0.5"/>
+-    <param name="odom_frame_id"             value="odom"/> 
+-    <param name="base_frame_id"             value="base_footprint"/> 
+-    <param name="global_frame_id"           value="map"/>
+-    <param name="resample_interval"         value="1"/>
+-    <param name="transform_tolerance"       value="1.0"/>
+-    <param name="recovery_alpha_slow"       value="0.0"/>
+-    <param name="recovery_alpha_fast"       value="0.0"/>
+-    <param name="initial_pose_x" value="0.0"/>
+-    <param name="initial_pose_y" value="0.0"/>
+-    <param name="initial_pose_a" value="0.0"/>
+-  </node>
+-</launch>
++<?xml version="1.0"?>
++<launch>
++  <!-- Explicit initial pose is a safety contract. A silent (0,0,0) guess can
++       localize the robot in the wrong corridor. -->
++  <arg name="initial_pose_x"/>
++  <arg name="initial_pose_y"/>
++  <arg name="initial_pose_a"/>
++  <node pkg="amcl" type="amcl" name="amcl" respawn="false">
++    <param name="use_map_topic"             value="true"/>
++    <remap from="scan"                      to="scan"/>
++    <!-- Publish scans from best pose at a max of 10 Hz -->
++    <param name="odom_model_type"           value="diff"/>
++    <param name="odom_alpha5"               value="0.1"/>
++    <param name="gui_publish_rate"          value="10.0"/>
++    <!-- A low-mounted 2D LiDAR still has enough angular samples for a denser
++         likelihood update.  Sixty beams improves discrimination in the
++         home's repeated narrow corridors without materially loading Nano. -->
++    <param name="laser_max_beams"             value="60"/>
++    <param name="min_particles"             value="500"/>
++    <param name="max_particles"             value="5000"/>
++    <param name="kld_err"                   value="0.05"/>
++    <param name="kld_z"                     value="0.99"/>
++    <param name="odom_alpha1"               value="0.2"/>
++    <param name="odom_alpha2"               value="0.2"/>
++    <!-- translation std dev, m -->
++    <param name="odom_alpha3"               value="0.8"/>
++    <param name="odom_alpha4"               value="0.2"/>
++    <param name="laser_z_hit"               value="0.5"/>
++    <param name="laser_z_short"             value="0.05"/>
++    <param name="laser_z_max"               value="0.05"/>
++    <param name="laser_z_rand"              value="0.5"/>
++    <param name="laser_sigma_hit"           value="0.2"/>
++    <param name="laser_lambda_short"        value="0.1"/>
++    <param name="laser_model_type"          value="likelihood_field"/>
++    <!-- <param name="laser_model_type" value="beam"/> -->
++    <param name="laser_likelihood_max_dist" value="2.0"/>
++    <!-- Keep AMCL responsive for the optional generic navigation stack.  The
++         formal semantic-map capture path does not launch AMCL. -->
++    <!-- Publish a pose on every scan so a stationary survey can start.
++         The previous 5 cm / 0.10 rad gates left /amcl_pose silent after the
++         first match; the recorder then waited 60 s and aborted. -->
++    <param name="update_min_d"              value="0.0"/>
++    <param name="update_min_a"              value="0.0"/>
++    <param name="odom_frame_id"             value="odom"/> 
++    <param name="base_frame_id"             value="base_footprint"/> 
++    <param name="global_frame_id"           value="map"/>
++    <param name="resample_interval"         value="1"/>
++    <param name="transform_tolerance"       value="1.0"/>
++    <param name="recovery_alpha_slow"       value="0.0"/>
++    <param name="recovery_alpha_fast"       value="0.0"/>
++    <param name="initial_pose_x" value="$(arg initial_pose_x)"/>
++    <param name="initial_pose_y" value="$(arg initial_pose_y)"/>
++    <param name="initial_pose_a" value="$(arg initial_pose_a)"/>
++  </node>
++</launch>
+diff --git a/launch/camera.launch b/launch/camera.launch
+index 28501d2..7b6b4f2 100644
+--- a/launch/camera.launch
++++ b/launch/camera.launch
+@@ -4,14 +4,15 @@
+     <arg name="frame_id" default="camera_link"/>
+     <arg name="image_width" default="640"/>
+     <arg name="image_height" default="480"/>
+-    <arg name="camera_info_url" default="file://$(find jetbot_pro)/cfg/cam_480p.yaml"/>
++    <arg name="camera_info_url" default="file://$(find jetbot_pro)/config/camera_calibration/cam_640x480.yaml"/>
+ 
+     <node name="camera" pkg="cv_camera" type="cv_camera_node" output="screen">
+       <param name="device_id" value="$(arg device_id)" />
+       <param name="frame_id" value="$(arg frame_id)" />
+       <param name="image_width" value="$(arg image_width)" />
+       <param name="image_height" value="$(arg image_height)" />
+-      <param name="camera_info_url" type="string" value="$(arg camera_info_url)"/>
++      <param name="camera_info_url" type="string" value="$(arg camera_info_url)"/>
++      <param name="camera_name" type="string" value="csi_cam_0"/>
+       <remap from="/camera/image_raw/compressed" to="/image_raw/compressed"/>
+     </node>
+-</launch>
+\ No newline at end of file
++</launch>
+diff --git a/launch/cartographer.launch b/launch/cartographer.launch
+index 82ed629..5747723 100644
+--- a/launch/cartographer.launch
++++ b/launch/cartographer.launch
+@@ -7,7 +7,8 @@
+           -configuration_directory $(find jetbot_pro)/config/cartographer
+           -configuration_basename jetbot.lua"
+       output="screen">
+-    <remap from="scan" to="/scan" />
++    <remap from="scan" to="/scan" />
++    <remap from="odom" to="/odom" />
+   </node>
+ 
+   <node name="cartographer_occupancy_grid_node" pkg="cartographer_ros"
+diff --git a/launch/csi_camera.launch b/launch/csi_camera.launch
+index f865a3a..a1e0208 100644
+--- a/launch/csi_camera.launch
++++ b/launch/csi_camera.launch
+@@ -1,38 +1,51 @@
+-<?xml version="1.0"?>
+-<launch>
+-  <!-- Command Line Arguments -->
+-  <arg name="sensor_id" default="0" />                       <!-- The sensor id of the camera -->
+-  <arg name="cam_name" default="csi_cam_$(arg sensor_id)" /> <!-- The name of the camera (corrsponding to the camera info) -->
+-  <arg name="frame_id" default="/$(arg cam_name)_link" />    <!-- The TF frame ID. -->
+-  <arg name="sync_sink" default="false" />                    <!-- Synchronize the app sink. Setting this to false may resolve problems with sub-par framerates. -->
+-  <arg name="width" default="640" />                         <!-- Image Width to stream -->
+-  <arg name="height" default="480" />                        <!-- Image Height to stream -->
+-  <arg name="fps" default="20" />                            <!-- Desired framerate. True framerate may not reach this if set too high. -->
+-  <arg name="flip_method" default="0" />                     <!-- flip_method -->
+-  <arg name="load_camera_info" default="true" />             <!-- Load the camera info or not-->
+-  <arg name="camera_info_url" default="file://$(find jetbot_pro)/config/camera_calibration/cam_640x480.yaml" />
+-
+-  <!-- Make arguments available to parameter server -->
+-  <param name="$(arg cam_name)/camera_id" type="int" value="$(arg sensor_id)" />
+-  <param name="$(arg cam_name)/image_width" type="int" value="$(arg width)" />
+-  <param name="$(arg cam_name)/image_height" type="int" value="$(arg height)" />
+-  <param name="$(arg cam_name)/target_fps" type="int" value="$(arg fps)" />
+-
+-  <!-- Define the camera calibration parameter -->
+-  <param name="$(arg cam_name)/camera_info_url" type="string" if="$(arg load_camera_info)" value="$(arg camera_info_url)" />
+-
+-  <!-- Define the GSCAM pipeline -->
+-  <param name="$(arg cam_name)/gscam_config" type="string" value="nvarguscamerasrc sensor-id=$(arg sensor_id) ! video/x-raw(memory:NVMM),
+-    width=(int)$(arg width), height=(int)$(arg height), format=(string)NV12, framerate=(fraction)$(arg fps)/1 !
+-    nvvidconv flip-method=$(arg flip_method) ! videoconvert" />
+-
+-  <!-- Start the GSCAM node -->
+-  <node pkg="gscam" type="gscam" name="$(arg cam_name)" output="screen">
+-    <param name="camera_name" value="$(arg cam_name)" />
+-    <param name="frame_id" value="$(arg frame_id)" />
+-    <param name="sync_sink" value="$(arg sync_sink)" />
+-    <remap from="camera/image_raw" to="$(arg cam_name)/image_raw" />
+-    <remap from="/set_camera_info" to="$(arg cam_name)/set_camera_info" />
+-  </node>
+-</launch>
+-
++<?xml version="1.0"?>
++<launch>
++  <!-- Command Line Arguments -->
++  <arg name="sensor_id" default="0" />                       <!-- The sensor id of the camera -->
++  <arg name="cam_name" default="csi_cam_$(arg sensor_id)" /> <!-- The name of the camera (corrsponding to the camera info) -->
++  <arg name="frame_id" default="$(arg cam_name)_link" />     <!-- tf2 frame IDs must not start with '/'. -->
++  <arg name="sync_sink" default="false" />                    <!-- Synchronize the app sink. Setting this to false may resolve problems with sub-par framerates. -->
++  <arg name="use_gst_timestamps" default="false" />           <!-- Prefer GStreamer timestamps when pairing two CSI streams. -->
++  <arg name="width" default="640" />                         <!-- Image Width to stream -->
++  <arg name="height" default="480" />                        <!-- Image Height to stream -->
++  <arg name="fps" default="20" />                            <!-- Desired framerate. True framerate may not reach this if set too high. -->
++  <arg name="flip_method" default="0" />                     <!-- flip_method -->
++  <arg name="load_camera_info" default="true" />             <!-- Load the camera info or not-->
++  <arg name="camera_info_url" default="file://$(find jetbot_pro)/config/camera_calibration/cam_640x480.yaml" />
++  <arg name="required" default="true" />                  <!-- Camera death tears down the owning safety launch. -->
++  <arg name="sample_timeout_s" default="10.0" />           <!-- Argus cold-start on Nano can exceed 2 s after a daemon restart. -->
++
++  <!-- Make arguments available to parameter server -->
++  <param name="$(arg cam_name)/camera_id" type="int" value="$(arg sensor_id)" />
++  <param name="$(arg cam_name)/image_width" type="int" value="$(arg width)" />
++  <param name="$(arg cam_name)/image_height" type="int" value="$(arg height)" />
++  <param name="$(arg cam_name)/target_fps" type="int" value="$(arg fps)" />
++
++  <!-- Define the camera calibration parameter -->
++  <param name="$(arg cam_name)/camera_info_url" type="string" if="$(arg load_camera_info)" value="$(arg camera_info_url)" />
++
++  <!-- Define the GSCAM pipeline -->
++  <!-- Keep each caps expression whitespace-free after commas.  The pipeline
++       must also end in a real element, not a caps shorthand: gscam appends its
++       own appsink programmatically, and GStreamer 1.14 cannot parse a terminal
++       `video/x-raw,...` expression with no downstream element.  The appsink's
++       RGB caps make videoconvert negotiate the required output format. -->
++  <param name="$(arg cam_name)/gscam_config" type="string" value="nvarguscamerasrc sensor-id=$(arg sensor_id) ! video/x-raw(memory:NVMM),width=(int)$(arg width),height=(int)$(arg height),format=(string)NV12,framerate=(fraction)$(arg fps)/1 ! nvvidconv flip-method=$(arg flip_method) ! videoconvert" />
++
++  <!-- Start the GSCAM node -->
++  <node pkg="gscam" type="gscam" name="$(arg cam_name)" output="screen"
++        required="$(arg required)">
++    <param name="camera_name" value="$(arg cam_name)" />
++    <param name="frame_id" value="$(arg frame_id)" />
++    <param name="image_encoding" value="rgb8" />
++    <param name="sync_sink" value="$(arg sync_sink)" />
++    <param name="use_gst_timestamps" value="$(arg use_gst_timestamps)" />
++    <param name="sample_timeout_s" value="$(arg sample_timeout_s)" />
++    <remap from="camera/image_raw" to="$(arg cam_name)/image_raw" />
++    <!-- gscam registers this service relative to its public NodeHandle.  The
++         source must stay relative so two nodes under /stereo can be remapped
++         independently to /stereo/left and /stereo/right. -->
++    <remap from="set_camera_info" to="$(arg cam_name)/set_camera_info" />
++  </node>
++</launch>
++
+diff --git a/launch/gmapping.launch b/launch/gmapping.launch
+index 5481142..e81503a 100644
+--- a/launch/gmapping.launch
++++ b/launch/gmapping.launch
+@@ -1,6 +1,9 @@
+ <?xml version="1.0"?>
+ <launch>
+-  <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen" respawn="true" >
++  <!-- A restart resets the map frame.  Failing the launch is safer than
++       silently recording two incompatible map epochs into one bag. -->
++  <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping"
++        output="screen" respawn="false" required="true">
+     <remap from="scan" to="scan"/>
+     <param name="base_frame" value="base_footprint"/>
+     <param name="odom_frame" value="odom"/>
+diff --git a/launch/jetbot.launch b/launch/jetbot.launch
+index 02f10ab..deeeb77 100644
+--- a/launch/jetbot.launch
++++ b/launch/jetbot.launch
+@@ -1,11 +1,26 @@
+ <?xml version="1.0"?>
+-<launch>
+-  <param name="use_sim_time" value="false"/>
+-
+-  <node pkg="jetbot_pro" type="jetbot" name="jetbot" output="screen" respawn="true">
+-    <param name="port_name" value="/dev/ttyACM0"/>
+-    <param name="linear_correction" value="1.0"/>
+-    <param name="angular_correction" value="1.0"/>
++<launch>
++  <param name="use_sim_time" value="false"/>
++  <arg name="base_port" default="/dev/ttyACM0"/>
++  <arg name="require_safety_stop" default="false"/>
++  <!-- The real RP2040/IMU stream must pass a stationary yaw-drift check before
++       it is allowed into the EKF.  Keep publishing /imu for diagnostics, but
++       use wheel odometry alone by default so a bad gyro cannot rotate the
++       odom frame while the robot is standing still.  There is deliberately no
++       launch-time bypass: re-enabling fusion requires a reviewed source change
++       after the hardware has passed that gate. -->
++
++  <!-- The motor/serial process is safety-critical.  A crash must tear down the
++       launch so recovery requires an explicit full-stack restart; silently
++       respawning it could reconnect to a still-live cmd_vel publisher. -->
++  <node pkg="jetbot_pro" type="jetbot" name="jetbot" output="screen"
++        required="true" respawn="false">
++    <param name="port_name" value="$(arg base_port)"/>
++    <param name="require_safety_stop" value="$(arg require_safety_stop)"/>
++    <param name="linear_correction" value="1.0"/>
++    <param name="angular_correction" value="1.0"/>
++    <param name="max_linear_velocity" value="0.7"/>
++    <param name="max_angular_velocity" value="2.5"/>
+     <remap from="/odom" to="/odom_raw"/>
+     <param name="publish_odom_transform" value="false"/>
+   </node>
+@@ -16,7 +31,7 @@
+     <param name="freq" value="30.0"/>
+     <param name="sensor_timeout" value="0.5"/>
+     <param name="odom_used" value="true"/>
+-    <param name="imu_used" value="true"/>
++		<param name="imu_used" value="false"/>
+     <param name="vo_used" value="false"/>
+     <param name="debug" value="false"/>
+     <param name="self_diagnose" value="false"/>
+@@ -25,7 +40,8 @@
+ 		<remap from="/robot_pose_ekf/odom_combined" to="/odom_combined"/>
+   </node>
+   
+-  <node pkg="jetbot_pro" type="odom_ekf.py" name="odom_ekf_node" output="screen"/>
++  <node pkg="jetbot_pro" type="odom_ekf.py" name="odom_ekf_node"
++        output="screen" respawn="true" respawn_delay="2.0"/>
+   
+ 	<node pkg="tf" type="static_transform_publisher" name="base_footprint_to_imu" args="0 0 0.07 0 0 0 base_footprint base_imu_link 20"/> 
+-</launch>
+\ No newline at end of file
++</launch>
+diff --git a/launch/lidar.launch b/launch/lidar.launch
+index 01447a7..9ec1faf 100644
+--- a/launch/lidar.launch
++++ b/launch/lidar.launch
+@@ -1,14 +1,31 @@
+-<?xml version="1.0"?>
+-<launch>
+-  <node name="rplidarNode"          pkg="rplidar_ros"  type="rplidarNode" output="screen">
+-    <param name="serial_port"         type="string" value="/dev/ttyACM1"/>
+-    <param name="serial_baudrate"     type="int"    value="115200"/><!--A1/A2 -->
+-    <!--param name="serial_baudrate"     type="int"    value="256000"--><!--A3 -->
+-    <param name="frame_id"            type="string" value="laser_frame"/>
+-    <param name="inverted"            type="bool"   value="false"/>
+-    <param name="angle_compensate"    type="bool"   value="true"/>
+-  </node>
+-
+-  <node pkg="tf" type="static_transform_publisher" name="base_link_to_laser"
+-    args="0 0.0 0.15 3.14 0.0 0.0 /base_footprint /laser_frame 20" />
+-</launch>
++<?xml version="1.0"?>
++<launch>
++  <arg name="lidar_port" default="/dev/ttyACM1"/>
++  <arg name="start_watchdog" default="true"/>
++  <arg name="scan_startup_grace_s" default="10.0"/>
++  <arg name="scan_stale_timeout_s" default="1.0"/>
++  <node name="rplidarNode" pkg="rplidar_ros" type="rplidarNode"
++        output="screen" required="true">
++    <param name="serial_port"         type="string" value="$(arg lidar_port)"/>
++    <param name="serial_baudrate"     type="int"    value="115200"/><!--A1/A2 -->
++    <!--param name="serial_baudrate"     type="int"    value="256000"--><!--A3 -->
++    <param name="frame_id"            type="string" value="laser_frame"/>
++    <param name="inverted"            type="bool"   value="false"/>
++    <param name="angle_compensate"    type="bool"   value="true"/>
++    <remap from="scan" to="scan_raw"/>
++  </node>
++
++  <node pkg="jetbot_pro" type="scan_clip.py" name="scan_clip"
++        output="screen" required="true">
++    <param name="min_range_m" value="0.22"/>
++  </node>
++
++  <node pkg="tf" type="static_transform_publisher" name="base_link_to_laser"
++    args="0 0.0 0.15 3.14 0.0 0.0 /base_footprint /laser_frame 20" />
++
++  <node if="$(arg start_watchdog)" pkg="jetbot_pro" type="scan_watchdog.py"
++        name="scan_watchdog" output="screen" required="true">
++    <param name="startup_grace_s" value="$(arg scan_startup_grace_s)"/>
++    <param name="stale_timeout_s" value="$(arg scan_stale_timeout_s)"/>
++  </node>
++</launch>
+diff --git a/launch/move_base.launch b/launch/move_base.launch
+index 32fbae5..cec1be1 100644
+--- a/launch/move_base.launch
++++ b/launch/move_base.launch
+@@ -1,5 +1,6 @@
+-<launch>
+-  <node pkg="move_base" type="move_base" respawn="true" name="move_base" output="screen" clear_params="true">
++<launch>
++  <arg name="allow_unknown" default="false"/>
++  <node pkg="move_base" type="move_base" respawn="true" name="move_base" output="screen" clear_params="true">
+     <rosparam file="$(find jetbot_pro)/config/diff/costmap_common_params.yaml" command="load" ns="global_costmap" />
+     <rosparam file="$(find jetbot_pro)/config/diff/costmap_common_params.yaml" command="load" ns="local_costmap" />
+     <rosparam file="$(find jetbot_pro)/config/diff/local_costmap_params.yaml" command="load" />
+@@ -7,7 +8,10 @@
+     <rosparam file="$(find jetbot_pro)/config/diff/teb_local_planner_params.yaml" command="load" />
+     
+     <rosparam file="$(find jetbot_pro)/config/diff/base_global_planner_param.yaml" command="load" />
+-    <rosparam file="$(find jetbot_pro)/config/diff/move_base_params.yaml" command="load" />
+-  </node>
++    <rosparam file="$(find jetbot_pro)/config/diff/move_base_params.yaml" command="load" />
++    <!-- Exploration must reach frontiers bordering unknown cells.  Saved-map
++         navigation keeps this false so it never plans through unknown space. -->
++    <param name="GlobalPlanner/allow_unknown" value="$(arg allow_unknown)"/>
++  </node>
+   
+-</launch>
+\ No newline at end of file
++</launch>
+diff --git a/launch/nav.launch b/launch/nav.launch
+index cad65f6..b2f4b96 100644
+--- a/launch/nav.launch
++++ b/launch/nav.launch
+@@ -1,19 +1,64 @@
+-<?xml version="1.0"?>
+-<launch>
+-	<include file="$(find jetbot_pro)/launch/jetbot.launch" />
+-
+-  <include file="$(find jetbot_pro)/launch/lidar.launch" />
+-
+-  <include file="$(find jetbot_pro)/launch/csi_camera.launch" /> 
+-
+-	<!-- Start the map server function pack and publish the map -->
+-	<arg name="map_file" default="$(find jetbot_pro)/maps/mymap.yaml"/>
+-	<node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
+-
+-	<!--Start AMCL Adaptive Monte Carlo positioning algorithm package -->
+-	<include file="$(find jetbot_pro)/launch/amcl.launch" />
+-    
+-	<!-- Start path planning algorithm package -->
+-	<include file="$(find jetbot_pro)/launch/move_base.launch"/>
+-  
+-</launch>
++<?xml version="1.0"?>
++<launch>
++	<arg name="camera_mode" default="stereo" doc="stereo or mono"/>
++	<arg name="base_port" default="/dev/ttyACM0"/>
++	<arg name="lidar_port" default="/dev/ttyACM1"/>
++	<arg name="left_sensor_id" default="1"/>
++	<arg name="right_sensor_id" default="0"/>
++	<arg name="mono_sensor_id" default="0"/>
++	<arg name="start_stereo_image_proc" default="false"/>
++	<arg name="load_camera_info" default="true"/>
++	<arg name="max_pair_dt_s" default="0.020"/>
++	<arg name="fps" default="15"/>
++	<arg name="start_camera" default="true"/>
++	<arg name="start_move_base" default="true"/>
++	<arg name="initial_pose_x"/>
++	<arg name="initial_pose_y"/>
++	<arg name="initial_pose_a"/>
++	<arg name="left_camera_info_url"
++	     default="file://$(find jetbot_pro)/config/camera_calibration/stereo_left_640x480.yaml"/>
++	<arg name="right_camera_info_url"
++	     default="file://$(find jetbot_pro)/config/camera_calibration/stereo_right_640x480.yaml"/>
++	<include file="$(find jetbot_pro)/launch/jetbot.launch">
++	  <arg name="base_port" value="$(arg base_port)"/>
++	  <arg name="require_safety_stop" value="true"/>
++	</include>
++
++  <include file="$(find jetbot_pro)/launch/lidar.launch">
++    <arg name="lidar_port" value="$(arg lidar_port)"/>
++  </include>
++
++  <group if="$(arg start_camera)">
++    <include file="$(find jetbot_pro)/launch/camera_select.launch">
++      <arg name="camera_mode" value="$(arg camera_mode)"/>
++      <arg name="left_sensor_id" value="$(arg left_sensor_id)"/>
++      <arg name="right_sensor_id" value="$(arg right_sensor_id)"/>
++      <arg name="mono_sensor_id" value="$(arg mono_sensor_id)"/>
++      <arg name="left_camera_info_url" value="$(arg left_camera_info_url)"/>
++      <arg name="right_camera_info_url" value="$(arg right_camera_info_url)"/>
++      <arg name="start_stereo_image_proc" value="$(arg start_stereo_image_proc)"/>
++      <arg name="load_camera_info" value="$(arg load_camera_info)"/>
++      <arg name="max_pair_dt_s" value="$(arg max_pair_dt_s)"/>
++      <arg name="fps" value="$(arg fps)"/>
++    </include>
++  </group>
++
++	<!-- A real saved map is required.  Do not silently point map_server at a
++	     filename that is absent from a fresh checkout. -->
++	<arg name="map_file"/>
++	<node name="map_server" pkg="map_server" type="map_server"
++	      args="$(arg map_file)" required="true" />
++
++	<!--Start AMCL Adaptive Monte Carlo positioning algorithm package -->
++	<include file="$(find jetbot_pro)/launch/amcl.launch">
++	  <arg name="initial_pose_x" value="$(arg initial_pose_x)"/>
++	  <arg name="initial_pose_y" value="$(arg initial_pose_y)"/>
++	  <arg name="initial_pose_a" value="$(arg initial_pose_a)"/>
++	</include>
++    
++	<!-- Start path planning only when this launch owns /cmd_vel. -->
++	<group if="$(arg start_move_base)">
++	  <include file="$(find jetbot_pro)/launch/move_base.launch"/>
++	</group>
++  
++</launch>
+diff --git a/launch/slam.launch b/launch/slam.launch
+index 11cb8d5..0e8bb11 100644
+--- a/launch/slam.launch
++++ b/launch/slam.launch
+@@ -1,12 +1,48 @@
+ <?xml version="1.0"?>
+-<launch>
+-  <arg name="map_type" default="gmapping" doc="opt: gmapping,hector,karto,cartographer"/>
++<launch>
++  <!-- Keep gmapping as the verified default. Cartographer remains opt-in until
++       its odom/base TF ownership has been validated on the real robot. -->
++  <arg name="map_type" default="gmapping" doc="opt: gmapping,hector,karto,cartographer"/>
++  <arg name="base_port" default="/dev/ttyACM0"/>
++  <arg name="lidar_port" default="/dev/ttyACM1"/>
++  <arg name="camera_mode" default="stereo" doc="stereo or mono"/>
++  <!-- The first geometry-mapping pass only needs wheel odometry and LiDAR.
++       Two 30 Hz RGB streams consume roughly one Nano CPU core each, so camera
++       capture is opt-in here and is enabled later by the checked survey pass. -->
++  <arg name="start_camera" default="false"/>
++  <arg name="left_sensor_id" default="1"/>
++  <arg name="right_sensor_id" default="0"/>
++  <arg name="mono_sensor_id" default="0"/>
++  <arg name="start_stereo_image_proc" default="false"/>
++  <arg name="load_camera_info" default="true"/>
++  <arg name="max_pair_dt_s" default="0.020"/>
++  <arg name="left_camera_info_url"
++       default="file://$(find jetbot_pro)/config/camera_calibration/stereo_left_640x480.yaml"/>
++  <arg name="right_camera_info_url"
++       default="file://$(find jetbot_pro)/config/camera_calibration/stereo_right_640x480.yaml"/>
+     
+-  <include file="$(find jetbot_pro)/launch/jetbot.launch" />
++  <include file="$(find jetbot_pro)/launch/jetbot.launch">
++    <arg name="base_port" value="$(arg base_port)"/>
++    <arg name="require_safety_stop" value="true"/>
++  </include>
++
++  <include file="$(find jetbot_pro)/launch/lidar.launch">
++    <arg name="lidar_port" value="$(arg lidar_port)"/>
++  </include>
+ 
+-  <include file="$(find jetbot_pro)/launch/lidar.launch" />
+-
+-  <include file="$(find jetbot_pro)/launch/csi_camera.launch" /> 
++  <group if="$(arg start_camera)">
++    <include file="$(find jetbot_pro)/launch/camera_select.launch">
++      <arg name="camera_mode" value="$(arg camera_mode)"/>
++      <arg name="left_sensor_id" value="$(arg left_sensor_id)"/>
++      <arg name="right_sensor_id" value="$(arg right_sensor_id)"/>
++      <arg name="mono_sensor_id" value="$(arg mono_sensor_id)"/>
++      <arg name="left_camera_info_url" value="$(arg left_camera_info_url)"/>
++      <arg name="right_camera_info_url" value="$(arg right_camera_info_url)"/>
++      <arg name="start_stereo_image_proc" value="$(arg start_stereo_image_proc)"/>
++      <arg name="load_camera_info" value="$(arg load_camera_info)"/>
++      <arg name="max_pair_dt_s" value="$(arg max_pair_dt_s)"/>
++    </include>
++  </group>
+   
+   <include file="$(find jetbot_pro)/launch/$(arg map_type).launch" /> 
+ 
+diff --git a/launch/slam_nav.launch b/launch/slam_nav.launch
+index ee9a762..5296542 100644
+--- a/launch/slam_nav.launch
++++ b/launch/slam_nav.launch
+@@ -1,17 +1,52 @@
+ <?xml version="1.0"?>
+-<launch>
+-  <param name="use_sim_time" value="false"/>
++<launch>
++  <param name="use_sim_time" value="false"/>
++  <arg name="camera_mode" default="stereo" doc="stereo or mono"/>
++  <arg name="start_camera" default="false"/>
++  <arg name="base_port" default="/dev/ttyACM0"/>
++  <arg name="lidar_port" default="/dev/ttyACM1"/>
++  <arg name="left_sensor_id" default="1"/>
++  <arg name="right_sensor_id" default="0"/>
++  <arg name="mono_sensor_id" default="0"/>
++  <arg name="start_stereo_image_proc" default="false"/>
++  <arg name="load_camera_info" default="true"/>
++  <arg name="max_pair_dt_s" default="0.020"/>
++  <arg name="left_camera_info_url"
++       default="file://$(find jetbot_pro)/config/camera_calibration/stereo_left_640x480.yaml"/>
++  <arg name="right_camera_info_url"
++       default="file://$(find jetbot_pro)/config/camera_calibration/stereo_right_640x480.yaml"/>
+   
+-	<include file="$(find jetbot_pro)/launch/jetbot.launch" />
++	<include file="$(find jetbot_pro)/launch/jetbot.launch">
++	  <arg name="base_port" value="$(arg base_port)"/>
++	  <arg name="require_safety_stop" value="true"/>
++	</include>
++
++  <include file="$(find jetbot_pro)/launch/lidar.launch">
++    <arg name="lidar_port" value="$(arg lidar_port)"/>
++  </include>
+ 
+-  <include file="$(find jetbot_pro)/launch/lidar.launch" />
+-
+-  <include file="$(find jetbot_pro)/launch/csi_camera.launch" /> 
++  <group if="$(arg start_camera)">
++    <include file="$(find jetbot_pro)/launch/camera_select.launch">
++      <arg name="camera_mode" value="$(arg camera_mode)"/>
++      <arg name="left_sensor_id" value="$(arg left_sensor_id)"/>
++      <arg name="right_sensor_id" value="$(arg right_sensor_id)"/>
++      <arg name="mono_sensor_id" value="$(arg mono_sensor_id)"/>
++      <arg name="start_stereo_image_proc" value="$(arg start_stereo_image_proc)"/>
++      <arg name="load_camera_info" value="$(arg load_camera_info)"/>
++      <arg name="max_pair_dt_s" value="$(arg max_pair_dt_s)"/>
++      <arg name="left_camera_info_url" value="$(arg left_camera_info_url)"/>
++      <arg name="right_camera_info_url" value="$(arg right_camera_info_url)"/>
++    </include>
++  </group>
+   
+-  <include file="$(find jetbot_pro)/launch/gmapping.launch" /> 
++  <!-- Keep the verified TF topology by default; Cartographer is opt-in. -->
++  <arg name="map_type" default="gmapping" doc="opt: gmapping,hector,karto,cartographer"/>
++  <include file="$(find jetbot_pro)/launch/$(arg map_type).launch" />
+     
+ 	<!-- Start path planning algorithm package -->
+-	<include file="$(find jetbot_pro)/launch/move_base.launch"/>
++	<include file="$(find jetbot_pro)/launch/move_base.launch">
++    <arg name="allow_unknown" value="true"/>
++  </include>
+   
+ </launch>
+ 
+diff --git a/package.xml b/package.xml
+index e885dec..e115b1c 100755
+--- a/package.xml
++++ b/package.xml
+@@ -50,7 +50,9 @@
+   <!--   <doc_depend>doxygen</doc_depend> -->
+   <buildtool_depend>catkin</buildtool_depend>
+   <build_depend>dynamic_reconfigure</build_depend>
++  <build_depend>boost</build_depend>
+   <build_depend>geometry_msgs</build_depend>
++  <build_depend>message_generation</build_depend>
+   <build_depend>nav_msgs</build_depend>
+   <build_depend>roscpp</build_depend>
+   <build_depend>rospy</build_depend>
+@@ -58,6 +60,7 @@
+   <build_depend>std_msgs</build_depend>
+   <build_depend>tf</build_depend>
+   <build_export_depend>dynamic_reconfigure</build_export_depend>
++  <build_export_depend>boost</build_export_depend>
+   <build_export_depend>geometry_msgs</build_export_depend>
+   <build_export_depend>nav_msgs</build_export_depend>
+   <build_export_depend>roscpp</build_export_depend>
+@@ -66,13 +69,55 @@
+   <build_export_depend>std_msgs</build_export_depend>
+   <build_export_depend>tf</build_export_depend>
+   <exec_depend>dynamic_reconfigure</exec_depend>
++  <exec_depend>boost</exec_depend>
+   <exec_depend>geometry_msgs</exec_depend>
++  <exec_depend>message_runtime</exec_depend>
+   <exec_depend>nav_msgs</exec_depend>
+   <exec_depend>roscpp</exec_depend>
+   <exec_depend>rospy</exec_depend>
+   <exec_depend>sensor_msgs</exec_depend>
+   <exec_depend>std_msgs</exec_depend>
++  <exec_depend>std_srvs</exec_depend>
+   <exec_depend>tf</exec_depend>
++  <exec_depend>joy</exec_depend>
++  <exec_depend>gscam</exec_depend>
++  <exec_depend>image_transport</exec_depend>
++  <exec_depend>compressed_image_transport</exec_depend>
++  <exec_depend>camera_calibration</exec_depend>
++  <exec_depend>cv_bridge</exec_depend>
++  <exec_depend>message_filters</exec_depend>
++  <exec_depend>python-rospkg</exec_depend>
++  <exec_depend>python-numpy</exec_depend>
++  <exec_depend>python-opencv</exec_depend>
++  <exec_depend>python-yaml</exec_depend>
++  <exec_depend>stereo_image_proc</exec_depend>
++  <exec_depend>stereo_msgs</exec_depend>
++  <exec_depend>tf2_ros</exec_depend>
++  <exec_depend>tf2_msgs</exec_depend>
++  <exec_depend>vision_msgs</exec_depend>
++  <exec_depend>visualization_msgs</exec_depend>
++  <exec_depend>amcl</exec_depend>
++  <exec_depend>audio_capture</exec_depend>
++  <exec_depend>audio_play</exec_depend>
++  <exec_depend>cartographer_ros</exec_depend>
++  <exec_depend>cv_camera</exec_depend>
++  <exec_depend>explore_lite</exec_depend>
++  <exec_depend>global_planner</exec_depend>
++  <exec_depend>gmapping</exec_depend>
++  <exec_depend>hector_mapping</exec_depend>
++  <exec_depend>map_server</exec_depend>
++  <exec_depend>move_base</exec_depend>
++  <exec_depend>robot_pose_ekf</exec_depend>
++  <exec_depend>rosbag</exec_depend>
++  <exec_depend>roslib</exec_depend>
++  <exec_depend>rplidar_ros</exec_depend>
++  <exec_depend>rviz</exec_depend>
++  <exec_depend>slam_karto</exec_depend>
++  <exec_depend>teb_local_planner</exec_depend>
++  <exec_depend>clear_costmap_recovery</exec_depend>
++  <exec_depend>rotate_recovery</exec_depend>
++  <test_depend>python-nose</test_depend>
++  <test_depend>gtest</test_depend>
+ 
+ 
+   <!-- The export tag contains other, unspecified, tags -->
+diff --git a/scripts/odom_ekf.py b/scripts/odom_ekf.py
+index 6d8eff5..784a8a7 100755
+--- a/scripts/odom_ekf.py
++++ b/scripts/odom_ekf.py
+@@ -33,17 +33,20 @@ class OdomEKF():
+         self.ekf_pub = rospy.Publisher('odom', Odometry, queue_size=5)
+         
+         # Wait for the /odom_combined topic to become available
+-        rospy.wait_for_message('odom_combined', PoseWithCovarianceStamped)
++        startup_timeout = float(rospy.get_param('~startup_timeout_s', 15.0))
++        rospy.wait_for_message(
++            'odom_combined', PoseWithCovarianceStamped,
++            timeout=startup_timeout)
+         
+         # Subscribe to the /odom_combined topic
+         rospy.Subscriber('odom_combined', PoseWithCovarianceStamped, self.pub_ekf_odom)
+         
+-        rospy.loginfo("Publishing combined odometry on /odom_ekf")
++        rospy.loginfo("Publishing combined odometry on /odom")
+         
+     def pub_ekf_odom(self, msg):
+         odom = Odometry()
+         odom.header = msg.header
+-        odom.header.frame_id = '/odom'
++        odom.header.frame_id = 'odom'
+         odom.child_frame_id = 'base_footprint'
+         odom.pose = msg.pose
+         
+@@ -53,5 +56,8 @@ if __name__ == '__main__':
+     try:
+         OdomEKF()
+         rospy.spin()
+-    except:
++    except rospy.ROSInterruptException:
+         pass
++    except Exception as error:
++        rospy.logfatal("odom_ekf failed: %s", str(error))
++        raise
+diff --git a/src/jetbot.cpp b/src/jetbot.cpp
+index c088180..e1e23f8 100755
+--- a/src/jetbot.cpp
++++ b/src/jetbot.cpp
+@@ -4,43 +4,61 @@
+ #include <nav_msgs/Odometry.h>
+ #include <sensor_msgs/Imu.h>
+ #include <std_msgs/Int32.h>
+-#include <std_msgs/Float32.h>
++#include <std_msgs/Float32.h>
++#include <std_msgs/Bool.h>
+ #include <dynamic_reconfigure/server.h>
+ #include "jetbot_pro/pidConfig.h"
+ 
+-#include <iostream>
+-#include <thread>
+-#include <boost/asio.hpp>
+-#include <boost/bind.hpp>
++#include <iostream>
++#include <thread>
++#include <atomic>
++#include <cerrno>
++#include <algorithm>
++#include <cmath>
++#include <mutex>
++#include <fcntl.h>
++#include <unistd.h>
++#include <boost/asio.hpp>
++#include <boost/bind.hpp>
++
++#include "jetbot_pro/base_safety.hpp"
+ 
+ #define head1 0xAA
+ #define head2 0x55
+-#define sendType_velocity    0x11
+-#define sendType_pid         0x12
+-#define sendType_params      0x13
++#define sendType_velocity    0x11
++#define sendType_pid         0x12
++#define sendType_params      0x13
++#define receiveType_telemetry 0x01
++#define telemetryFrameSize    0x2D
+ 
+ using namespace std;
+ using namespace boost::asio;
+ 
+-io_service iosev;
+-serial_port sp(iosev);         //Define the serial port for transmission
++io_service iosev;
++serial_port sp(iosev);         //Define the serial port for transmission
++std::mutex serial_io_mutex;
++std::atomic<bool> serial_stop_requested(false);
+ 
+ std::string port_name;
+ int baud_rate;
+-bool publish_odom_transform;
++bool publish_odom_transform;
++bool require_safety_stop;
++bool safety_stop = true;
+ int kp;
+ int ki;
+ int kd;
+-double linear_correction;
+-double angular_correction;
++double linear_correction;
++double angular_correction;
++double max_linear_velocity;
++double max_angular_velocity;
+       
+-ros::Time cmd_time;
++ros::WallTime cmd_wall_time;
+ 
+ double x = 0.0;
+ double y = 0.0;
+ double yaw = 0.0;
+ 
+-uint8_t checksum(uint8_t* buf, size_t len)
++uint8_t checksum(uint8_t* buf, size_t len)
+ {
+   uint8_t sum = 0x00;
+   for(int i=0;i<len;i++)
+@@ -48,8 +66,85 @@ uint8_t checksum(uint8_t* buf, size_t len)
+     sum += *(buf + i);
+   }
+   
+-  return sum;
+-}
++  return sum;
++}
++
++// The receive loop and ROS callbacks run on different threads.  Keep every
++// native serial syscall non-blocking and serialize access to the descriptor so
++// a blocking read can never starve velocity commands or race shutdown.
++void write_serial(const uint8_t* data, size_t len)
++{
++  size_t sent = 0;
++  const ros::WallTime deadline = ros::WallTime::now() + ros::WallDuration(0.25);
++  while (sent < len)
++  {
++    ssize_t count;
++    int saved_errno = 0;
++    {
++      std::lock_guard<std::mutex> lock(serial_io_mutex);
++      count = ::write(sp.native_handle(), data + sent, len - sent);
++      if (count < 0)
++        saved_errno = errno;
++    }
++
++    if (count > 0)
++    {
++      sent += static_cast<size_t>(count);
++      continue;
++    }
++    if (count < 0 && saved_errno == EINTR)
++      continue;
++    if ((count == 0 || saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) &&
++        ros::WallTime::now() < deadline)
++    {
++      ros::WallDuration(0.002).sleep();
++      continue;
++    }
++
++    if (count == 0 || saved_errno == EAGAIN || saved_errno == EWOULDBLOCK)
++      saved_errno = ETIMEDOUT;
++    throw boost::system::system_error(
++        boost::system::error_code(saved_errno, boost::system::generic_category()),
++        "base serial write");
++  }
++}
++
++bool read_serial(uint8_t* data, size_t len)
++{
++  size_t received = 0;
++  while (received < len)
++  {
++    if (serial_stop_requested.load() || !ros::ok())
++      return false;
++
++    ssize_t count;
++    int saved_errno = 0;
++    {
++      std::lock_guard<std::mutex> lock(serial_io_mutex);
++      count = ::read(sp.native_handle(), data + received, len - received);
++      if (count < 0)
++        saved_errno = errno;
++    }
++
++    if (count > 0)
++    {
++      received += static_cast<size_t>(count);
++      continue;
++    }
++    if (count < 0 && saved_errno == EINTR)
++      continue;
++    if (count == 0 ||
++        (count < 0 && (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK)))
++    {
++      ros::WallDuration(0.002).sleep();
++      continue;
++    }
++    throw boost::system::system_error(
++        boost::system::error_code(saved_errno, boost::system::generic_category()),
++        "base serial read");
++  }
++  return true;
++}
+ 
+ /*PID parameter sending function*/
+ void SetPID(int p,int i, int d)
+@@ -66,7 +161,7 @@ void SetPID(int p,int i, int d)
+   tmp[8] = (d>>8)&0xff;
+   tmp[9] = d&0xff;
+   tmp[10] = checksum(tmp,10);
+-  write(sp,buffer(tmp,11));
++  write_serial(tmp, 11);
+ }
+ 
+ /*robot parameter sending function*/
+@@ -81,7 +176,7 @@ void SetParams(double linear_correction,double angular_correction) {
+   tmp[6]  = (int16_t)((int16_t)(angular_correction*1000)>>8)&0xff;
+   tmp[7]  = (int16_t)(angular_correction*1000)&0xff;
+   tmp[8]  = checksum(tmp,8);
+-  write(sp,buffer(tmp,9));
++  write_serial(tmp, 9);
+ }
+ 
+ /*robot speed transmission function*/
+@@ -99,17 +194,53 @@ void SetVelocity(double x, double y, double yaw)
+   tmp[8] = ((int16_t)(yaw*1000)>>8) & 0xff;
+   tmp[9] = ((int16_t)(yaw*1000)) & 0xff;
+   tmp[10] = checksum(tmp,10);
+-  write(sp,buffer(tmp,11));
++  write_serial(tmp, 11);
+ }
+ 
+ /* cmd_vel Subscriber callback function*/
+-void cmd_callback(const geometry_msgs::Twist& msg)
+-{
+-  x = msg.linear.x;
+-  y = msg.linear.x;
+-  yaw = msg.angular.z;
+-  cmd_time = ros::Time::now();
+-}
++void cmd_callback(const geometry_msgs::Twist& msg)
++{
++  if (require_safety_stop && safety_stop)
++  {
++    x = y = yaw = 0.0;
++    ROS_WARN_THROTTLE(1.0, "Ignoring cmd_vel while safety_stop is active");
++    return;
++  }
++  const jetbot_pro_safety::VelocityDecision decision =
++      jetbot_pro_safety::sanitizeVelocity(
++          msg.linear.x, msg.linear.y, msg.angular.z,
++          max_linear_velocity, max_angular_velocity);
++  if (!decision.input_finite)
++  {
++    ROS_WARN_THROTTLE(1.0, "Rejecting non-finite cmd_vel; commanding stop");
++    x = y = yaw = 0.0;
++  }
++  else
++  {
++    x = decision.x;
++    y = decision.y;
++    yaw = decision.yaw;
++    if (decision.clamped)
++      ROS_WARN_THROTTLE(1.0, "Clamping cmd_vel to configured safety limits");
++  }
++  cmd_wall_time = ros::WallTime::now();
++}
++
++void safety_callback(const std_msgs::Bool& msg)
++{
++  if (!require_safety_stop)
++    return;
++  safety_stop = msg.data;
++  if (safety_stop)
++  {
++    x = y = yaw = 0.0;
++    ROS_ERROR_THROTTLE(1.0, "Safety stop active: forcing zero velocity");
++  }
++  else
++  {
++    ROS_INFO("Safety stop released after valid LiDAR health checks");
++  }
++}
+ 
+ /*pid dynamic_reconfigure callback function*/
+ void pidConfig_callback(jetbot_pro::pidConfig &config)
+@@ -159,8 +290,10 @@ void serial_task()
+   ros::Publisher rset_pub    = n.advertise<std_msgs::Int32>("motor/rset",10); 
+   
+   ROS_INFO("start receive message");
+-  while(true)
+-  {
++  try
++  {
++    while(ros::ok())
++    {
+     //State machine
+     // [head1 head2 size type data checksum ]
+     // [0xAA  0x55  0x2D 0x01 ....  0xXX    ]
+@@ -168,7 +301,7 @@ void serial_task()
+     {
+       case State_Head1:             //waiting for frame header 1
+           frame_sum = 0x00;
+-          read(sp, buffer(&data[0], 1));
++          if (!read_serial(&data[0], 1)) return;
+           state = (data[0] == head1 ? State_Head2 : State_Head1);
+           if(state == State_Head1)
+           {
+@@ -177,7 +310,7 @@ void serial_task()
+           break;
+           
+       case State_Head2:             //waiting for frame header 2
+-          read(sp, buffer(&data[1], 1));
++          if (!read_serial(&data[1], 1)) return;
+           state = (data[1] == head2 ? State_Size : State_Head1);
+           if(state == State_Head1)
+           {
+@@ -185,29 +318,46 @@ void serial_task()
+           }
+           break;
+           
+-      case State_Size:              //waiting for frame Size
+-          read(sp, buffer(&data[2], 1));
+-          frame_size = data[2];
+-          state = State_Data;
+-          break;
++      case State_Size:              //waiting for frame Size
++          if (!read_serial(&data[2], 1)) return;
++          frame_size = data[2];
++          // This parser accesses telemetry fields through data[41].  Accept
++          // only the documented 0x2D telemetry frame; otherwise a noisy size
++          // byte could underflow frame_size-4 or overflow data[50].
++          if (!jetbot_pro_safety::validTelemetryFrameSize(
++                  frame_size, sizeof(data), telemetryFrameSize))
++          {
++              ROS_WARN_THROTTLE(1.0,
++                                "Discarding invalid serial frame size: %u",
++                                static_cast<unsigned int>(frame_size));
++              state = State_Head1;
++          }
++          else
++          {
++              state = State_Data;
++          }
++          break;
+           
+       case State_Data:              //waiting for frame data
+-          read(sp, buffer(&data[3], frame_size - 4));
++          if (!read_serial(&data[3], frame_size - 4)) return;
+           frame_type = data[3];
+           state = State_CheckSum;
+           break;
+           
+       case State_CheckSum:         //waiting for frame CheckSum
+-          read(sp, buffer(&data[frame_size -1], 1));
++          if (!read_serial(&data[frame_size -1], 1)) return;
+           frame_sum = checksum(data,frame_size -1);
+-          state = data[frame_size -1] == frame_sum ? State_Handle : State_Head1;
++          state = (data[frame_size -1] == frame_sum &&
++                   frame_type == receiveType_telemetry)
++                      ? State_Handle : State_Head1;
+           if(state == State_Head1)
+           {
+               //ROS_INFO_STREAM ("check sum error! recv is  : ->"<<(int)data[frame_size -1]<<"  calc is "<<frame_sum);
+           }
+           break;
+           
+-      case State_Handle:         //processing frame data
++      case State_Handle:         //processing frame data
++      {
+           now_time = ros::Time::now();
+           
+           //gyro
+@@ -273,9 +423,20 @@ void serial_task()
+ 
+           //set the velocity
+           odom_msgs.child_frame_id = "base_footprint";
+-          odom_msgs.twist.twist.linear.x = odom_list[3]/((now_time-last_time).toSec());
+-          odom_msgs.twist.twist.linear.y = odom_list[4]/((now_time-last_time).toSec());
+-          odom_msgs.twist.twist.angular.z = odom_list[5]/((now_time-last_time).toSec());
++          const double odom_dt = (now_time-last_time).toSec();
++          if (last_time.isZero() || !std::isfinite(odom_dt) ||
++              odom_dt <= 1e-6 || odom_dt > 1.0)
++          {
++            odom_msgs.twist.twist.linear.x = 0.0;
++            odom_msgs.twist.twist.linear.y = 0.0;
++            odom_msgs.twist.twist.angular.z = 0.0;
++          }
++          else
++          {
++            odom_msgs.twist.twist.linear.x = odom_list[3]/odom_dt;
++            odom_msgs.twist.twist.linear.y = odom_list[4]/odom_dt;
++            odom_msgs.twist.twist.angular.z = odom_list[5]/odom_dt;
++          }
+           odom_msgs.twist.covariance = { 1e-9, 0, 0, 0, 0, 0, 
+                                          0, 1e-3, 1e-9, 0, 0, 0, 
+                                          0, 0, 1e6, 0, 0, 0,
+@@ -303,14 +464,24 @@ void serial_task()
+ 
+           last_time = now_time;
+ 
+-          state = State_Head1;
+-          break;
+-      default:
++          state = State_Head1;
++          break;
++      }
++      default:
+           state = State_Head1;
+           break;
+     }
+-  }
+-}
++    }
++  }
++  catch (const boost::system::system_error& error)
++  {
++    if (ros::ok())
++    {
++      ROS_FATAL_STREAM("Base serial receive failed: " << error.what());
++      ros::shutdown();
++    }
++  }
++}
+ 
+ int main(int argc, char* argv[])
+ {
+@@ -322,56 +493,149 @@ int main(int argc, char* argv[])
+   pn.param<std::string>("port_name",port_name,std::string("/dev/ttyACM0"));
+   pn.param<int>("baud_rate",baud_rate,115200);
+ 
+-  pn.param<double>("linear_correction",linear_correction,1.0);
+-  pn.param<double>("angular_correction",angular_correction,1.0);
+-  pn.param<bool>("publish_odom_transform",publish_odom_transform,true);
++  pn.param<double>("linear_correction",linear_correction,1.0);
++  pn.param<double>("angular_correction",angular_correction,1.0);
++  pn.param<double>("max_linear_velocity",max_linear_velocity,0.7);
++  pn.param<double>("max_angular_velocity",max_angular_velocity,2.5);
++  pn.param<bool>("publish_odom_transform",publish_odom_transform,true);
++  pn.param<bool>("require_safety_stop",require_safety_stop,false);
++  safety_stop = require_safety_stop;
++
++  if (!jetbot_pro_safety::validPositiveCorrection(linear_correction) ||
++      !jetbot_pro_safety::validPositiveCorrection(angular_correction) ||
++      !jetbot_pro_safety::validVelocityLimit(max_linear_velocity) ||
++      !jetbot_pro_safety::validVelocityLimit(max_angular_velocity))
++  {
++    ROS_FATAL("Base parameters must be finite and fit the signed milliscale "
++              "wire protocol (positive corrections; nonnegative limits)");
++    return 1;
++  }
+   
+   //set serial port
+-  boost::system::error_code ec;
+-  sp.open(port_name,ec);
+-  sp.set_option(serial_port::baud_rate(baud_rate));   
+-  sp.set_option(serial_port::flow_control(serial_port::flow_control::none));
+-  sp.set_option(serial_port::parity(serial_port::parity::none));
+-  sp.set_option(serial_port::stop_bits(serial_port::stop_bits::one));
+-  sp.set_option(serial_port::character_size(8));
++  boost::system::error_code ec;
++  sp.open(port_name,ec);
++  if (ec || !sp.is_open())
++  {
++    ROS_FATAL_STREAM("Failed to open base serial port " << port_name
++                     << ": " << ec.message());
++    return 1;
++  }
++  try
++  {
++    sp.set_option(serial_port::baud_rate(baud_rate));
++    sp.set_option(serial_port::flow_control(serial_port::flow_control::none));
++    sp.set_option(serial_port::parity(serial_port::parity::none));
++    sp.set_option(serial_port::stop_bits(serial_port::stop_bits::one));
++    sp.set_option(serial_port::character_size(8));
++
++    const int serial_flags = fcntl(sp.native_handle(), F_GETFL, 0);
++    if (serial_flags < 0 ||
++        fcntl(sp.native_handle(), F_SETFL, serial_flags | O_NONBLOCK) < 0)
++    {
++      throw boost::system::system_error(
++          boost::system::error_code(errno, boost::system::generic_category()),
++          "set base serial non-blocking mode");
++    }
++  }
++  catch (const boost::system::system_error& error)
++  {
++    ROS_FATAL_STREAM("Failed to configure base serial port " << port_name
++                     << ": " << error.what());
++    return 1;
++  }
+   
+   //Create Subscriber
+-  ros::Subscriber cmd_sub    = n.subscribe("cmd_vel",10,cmd_callback);
++  ros::Subscriber cmd_sub    = n.subscribe("cmd_vel",10,cmd_callback);
++  ros::Subscriber safety_sub = n.subscribe("safety_stop", 2, safety_callback);
+   
+-  //set pid dynamic_reconfigure
+-  dynamic_reconfigure::Server<jetbot_pro::pidConfig> server;
+-  dynamic_reconfigure::Server<jetbot_pro::pidConfig>::CallbackType f;
+-  f = boost::bind(&pidConfig_callback, _1);
+-  server.setCallback(f);
+-
+-  ros::Duration(0.02).sleep();
+-  SetParams(linear_correction,angular_correction);
+-
+-  //Create serial port receiving task
+-  thread serial_thread(boost::bind(serial_task));
+-  
+-  ros::Time current_time, last_time;
+-  current_time = ros::Time::now();
+-  last_time = ros::Time::now();
+-  
+-  while(ros::ok()){
+-    
+-    //send once velocity to robot base every 0.02
+-    current_time = ros::Time::now();
+-    if((current_time - last_time).toSec() > 0.02){           
+-      last_time = current_time;
+-      
+-      if((current_time - cmd_time).toSec() > 1)
+-      {
+-        x = 0.0;
+-        y = 0.0;
+-        yaw = 0.0;
+-      }
+-      SetVelocity(x,y,yaw);
+-    }
+-    
+-    ros::spinOnce();
+-  }
+-     
+-  return 0;
+-}
++  thread serial_thread;
++  int exit_code = 0;
++  try
++  {
++    // setCallback() synchronously invokes pidConfig_callback(), which writes
++    // to serial.  Keep it inside the guarded lifetime so any write failure
++    // still reaches the final zero-command and thread/port cleanup below.
++    dynamic_reconfigure::Server<jetbot_pro::pidConfig> server;
++    dynamic_reconfigure::Server<jetbot_pro::pidConfig>::CallbackType f;
++    f = boost::bind(&pidConfig_callback, _1);
++    server.setCallback(f);
++
++    ros::Duration(0.02).sleep();
++    SetParams(linear_correction,angular_correction);
++
++    //Create serial port receiving task
++    serial_thread = thread(boost::bind(serial_task));
++
++    ros::WallTime current_wall_time;
++    // Drive the serial command path directly at 50 Hz.  A faster polling loop
++    // plus a strict 20 ms gate aliases to 40--50 Hz under scheduler jitter;
++    // using the required send cadence as the loop rate avoids that drift and
++    // still removes the former busy-spin.
++    ros::WallRate control_loop_rate(50.0);
++
++    while(ros::ok()){
++      // Process fresh safety and velocity callbacks before this cycle's
++      // command is written to the base.
++      ros::spinOnce();
++      current_wall_time = ros::WallTime::now();
++      const jetbot_pro_safety::CycleCommand command =
++          jetbot_pro_safety::commandForCycle(
++              x, y, yaw, (current_wall_time - cmd_wall_time).toSec(), 1.0,
++              require_safety_stop, safety_stop);
++      x = command.x;
++      y = command.y;
++      yaw = command.yaw;
++      SetVelocity(x,y,yaw);
++      control_loop_rate.sleep();
++    }
++  }
++  catch (const boost::system::system_error& error)
++  {
++    x = y = yaw = 0.0;
++    ROS_FATAL_STREAM("Base serial write failed: " << error.what());
++    exit_code = 1;
++    ros::shutdown();
++  }
++  catch (const std::exception& error)
++  {
++    // std::thread construction, dynamic_reconfigure, and allocation failures
++    // must not bypass the fail-stop cleanup sequence.
++    x = y = yaw = 0.0;
++    ROS_FATAL_STREAM("Base node failed: " << error.what());
++    exit_code = 1;
++    ros::shutdown();
++  }
++  catch (...)
++  {
++    x = y = yaw = 0.0;
++    ROS_FATAL("Base node failed with an unknown exception");
++    exit_code = 1;
++    ros::shutdown();
++  }
++
++  // Fail-stop on every normal ROS shutdown before releasing the serial port.
++  try
++  {
++    for (int i = 0; i < 3; ++i)
++    {
++      SetVelocity(0.0, 0.0, 0.0);
++      ros::WallDuration(0.02).sleep();
++    }
++  }
++  catch (const boost::system::system_error& error)
++  {
++    ROS_WARN_STREAM("Could not send final zero velocity: " << error.what());
++  }
++  serial_stop_requested.store(true);
++  if (serial_thread.joinable())
++    serial_thread.join();
++  boost::system::error_code close_error;
++  {
++    std::lock_guard<std::mutex> lock(serial_io_mutex);
++    sp.close(close_error);
++  }
++  if (close_error)
++    ROS_WARN_STREAM("Could not close base serial port: " << close_error.message());
++
++  return exit_code;
++}

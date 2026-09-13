@@ -1,0 +1,90 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- IMX219-83 is two independent sensors with a fixed 60 mm baseline.
+       It has NO hardware trigger synchronization.  The IDs below must be
+       verified by covering one lens at a time after installation. -->
+  <!-- Physical mapping verified from positive checkerboard disparity. -->
+  <arg name="left_sensor_id" default="1"/>
+  <arg name="right_sensor_id" default="0"/>
+  <arg name="width" default="640"/>
+  <arg name="height" default="480"/>
+  <!-- Real Nano/IMX219-83 testing found that 10 Hz left the two independent
+       streams about 34 ms out of phase, so the strict 20 ms gate accepted no
+       pairs.  At 30 Hz the measured median nearest-frame delta was 1.4 ms and
+       the gate published steadily at about 30 Hz. -->
+  <arg name="fps" default="30"/>
+  <arg name="flip_method" default="6"/>
+  <arg name="left_camera_info_url"
+       default="file://$(find jetbot_pro)/config/camera_calibration/stereo_left_640x480.yaml"/>
+  <arg name="right_camera_info_url"
+       default="file://$(find jetbot_pro)/config/camera_calibration/stereo_right_640x480.yaml"/>
+  <!-- Fail-safe default: capture works before calibration, but disparity is
+       opt-in.  Semantic mapping launch files enable it after calibration. -->
+  <arg name="start_stereo_image_proc" default="false"/>
+  <arg name="start_pair_gate" default="$(arg start_stereo_image_proc)"/>
+  <!-- Loading calibration is independent from computing disparity.  Recording
+       must keep calibrated CameraInfo even when stereo_image_proc is disabled,
+       otherwise an offline replay cannot reconstruct metric depth.  The
+       pre-calibration smoke test explicitly passes load_camera_info:=false. -->
+  <arg name="load_camera_info" default="true"/>
+  <arg name="max_pair_dt_s" default="0.020"/>
+  <arg name="queue_size" default="30"/>
+  <!-- Keep near-field targets inside the matcher search range.  This remains
+       overridable for diagnostics and higher-resolution experiments. -->
+  <arg name="disparity_range" default="128"/>
+
+  <!-- stereo_image_proc expects both CameraInfo messages in the left optical
+       frame.  The calibrated right projection matrix P carries the baseline. -->
+  <group ns="stereo">
+    <include file="$(find jetbot_pro)/launch/csi_camera.launch">
+      <arg name="sensor_id" value="$(arg left_sensor_id)"/>
+      <arg name="cam_name" value="left"/>
+      <arg name="frame_id" value="stereo_left_optical"/>
+      <arg name="width" value="$(arg width)"/>
+      <arg name="height" value="$(arg height)"/>
+      <arg name="fps" value="$(arg fps)"/>
+      <arg name="flip_method" value="$(arg flip_method)"/>
+      <arg name="sync_sink" value="false"/>
+      <arg name="use_gst_timestamps" value="true"/>
+      <arg name="load_camera_info" value="$(arg load_camera_info)"/>
+      <arg name="camera_info_url" value="$(arg left_camera_info_url)"/>
+    </include>
+
+    <include file="$(find jetbot_pro)/launch/csi_camera.launch">
+      <arg name="sensor_id" value="$(arg right_sensor_id)"/>
+      <arg name="cam_name" value="right"/>
+      <arg name="frame_id" value="stereo_left_optical"/>
+      <arg name="width" value="$(arg width)"/>
+      <arg name="height" value="$(arg height)"/>
+      <arg name="fps" value="$(arg fps)"/>
+      <arg name="flip_method" value="$(arg flip_method)"/>
+      <arg name="sync_sink" value="false"/>
+      <arg name="use_gst_timestamps" value="true"/>
+      <arg name="load_camera_info" value="$(arg load_camera_info)"/>
+      <arg name="camera_info_url" value="$(arg right_camera_info_url)"/>
+    </include>
+
+    <!-- The camera has no hardware trigger.  First reject pairs whose raw
+         timestamps are too far apart, then give accepted pairs a common left
+         stamp.  stereo_image_proc can therefore use ExactTime safely. -->
+    <node if="$(arg start_pair_gate)" pkg="jetbot_pro"
+          type="stereo_pair_gate.py" name="stereo_pair_gate" output="screen"
+          required="true">
+      <param name="max_pair_dt_s" value="$(arg max_pair_dt_s)"/>
+      <param name="queue_size" value="$(arg queue_size)"/>
+      <param name="require_calibration" value="$(arg start_stereo_image_proc)"/>
+    </node>
+
+    <node if="$(arg start_stereo_image_proc)"
+          pkg="stereo_image_proc" type="stereo_image_proc"
+          name="stereo_image_proc" output="screen" required="true">
+      <remap from="left/image_raw" to="left/image_sync"/>
+      <remap from="left/camera_info" to="left/camera_info_sync"/>
+      <remap from="right/image_raw" to="right/image_sync"/>
+      <remap from="right/camera_info" to="right/camera_info_sync"/>
+      <param name="approximate_sync" value="false"/>
+      <param name="queue_size" value="$(arg queue_size)"/>
+      <param name="disparity_range" value="$(arg disparity_range)"/>
+    </node>
+  </group>
+</launch>

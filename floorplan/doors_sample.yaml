@@ -1,0 +1,17 @@
+# 示例语义物体文件(格式 = slam-car-semantic-objects-v1)
+# 坐标为虚构示例值,仅作 pipeline 演示;真实数据就绪后
+# 用 --objects 换成真正的 semantic_objects_*.yaml 即可。
+schema: slam-car-semantic-objects-v1
+completed: true
+frame: map
+objects:
+- label: door
+  x: -1.250
+  y: 3.400
+  hits: 7
+  spread_m: 0.17
+- label: door
+  x: -3.100
+  y: 0.750
+  hits: 7
+  spread_m: 0.23

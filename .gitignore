@@ -1,0 +1,23 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# recorded data & generated maps (privacy + size)
+*.bag
+*.bag.active
+*.pgm
+maps/
+data/
+floorplan/out*/
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# build artifacts
+build/
+devel/
+*.tar.gz
+*.sha256

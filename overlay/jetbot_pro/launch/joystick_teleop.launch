@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="device" default="/dev/input/js0"/>
+  <arg name="deadzone" default="0.1"/>
+  <arg name="autorepeat_rate" default="20.0"/>
+  <arg name="cmd_vel_topic" default="/cmd_vel"/>
+  <arg name="joy_config" default="$(find jetbot_pro)/config/teleop/joystick.yaml"/>
+  <!-- Survey second pass: the enable trigger is broken on this pad. Stick
+       axes must drive without holding a bumper. Default stays true so
+       other joystick launches keep a dead-man switch. -->
+  <arg name="require_enable_button" default="true"/>
+  <!-- After rosparam load these override joystick.yaml.  Survey second pass
+       flips linear so stick-forward matches the robot head; yaml stays
+       negative so the openloop tour does not copy the pad sign. -->
+  <arg name="scale_linear" default="-0.15"/>
+  <arg name="scale_linear_turbo" default="-0.30"/>
+
+  <node pkg="joy" type="joy_node" name="joy_node" output="screen">
+    <param name="dev" value="$(arg device)"/>
+    <param name="deadzone" value="$(arg deadzone)"/>
+    <param name="autorepeat_rate" value="$(arg autorepeat_rate)"/>
+  </node>
+
+  <node pkg="jetbot_pro" type="joy_teleop.py" name="joy_teleop" output="screen">
+    <rosparam file="$(arg joy_config)" command="load"/>
+    <param name="require_enable_button" value="$(arg require_enable_button)"/>
+    <param name="scale_linear" value="$(arg scale_linear)"/>
+    <param name="scale_linear_turbo" value="$(arg scale_linear_turbo)"/>
+    <remap from="/cmd_vel" to="$(arg cmd_vel_topic)"/>
+  </node>
+</launch>

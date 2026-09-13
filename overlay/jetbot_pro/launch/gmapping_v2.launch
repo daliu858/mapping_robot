@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- 建图轮 v2 调参(2026-08-30,Fable 提案 + Kimi 对审合并,依据见
+       swarm/BRIEF_KIMI_GMAPPING.md 与 swarm/KIMI_GMAPPING_REVIEW.md)。
+       原 gmapping.launch 保留作回滚。核心变化:
+       1) particles 8→30:窄走廊假设多样性,回到包默认
+       2) odom 噪声 ×5 且非对称(srr .04/srt .05/str .10/stt .15):
+          打滑差速轮"转弯比直行更不可信",按 motionmodel.cpp 代码语义配比
+       3) linearUpdate .05→.15 / angularUpdate .0436→.10:降低错误注入频率
+       4) maxUrange 8→6:穿玻璃真实回波(实测 >6m 仅 3.4% 波束)从源头掐断
+       5) kernelSize 1→2 + sigma .05→.075:搜索窗随噪声模型同步放宽,
+          否则粒子被撒出 ±1 格窗口拉不回来 —— 旧图墙体双影的成因
+       6) lskip 0→1:CPU 泄压阀,对冲 30 粒子的开销
+       重启失败即崩溃(respawn=false required=true)语义保持不变。 -->
+  <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping"
+        output="screen" respawn="false" required="true">
+    <remap from="scan" to="scan"/>
+    <param name="base_frame" value="base_footprint"/>
+    <param name="odom_frame" value="odom"/>
+    <param name="map_update_interval" value="2.0"/>
+    <param name="maxUrange" value="6.0"/>
+    <param name="maxRange" value="12.0"/>
+    <param name="sigma" value="0.075"/>
+    <param name="kernelSize" value="2"/>
+    <param name="lstep" value="0.05"/>
+    <param name="astep" value="0.05"/>
+    <param name="iterations" value="5"/>
+    <param name="lsigma" value="0.075"/>
+    <param name="ogain" value="3.0"/>
+    <param name="lskip" value="1"/>
+    <param name="minimumScore" value="100"/>
+    <param name="srr" value="0.04"/>
+    <param name="srt" value="0.05"/>
+    <param name="str" value="0.10"/>
+    <param name="stt" value="0.15"/>
+    <param name="linearUpdate" value="0.15"/>
+    <param name="angularUpdate" value="0.10"/>
+    <param name="temporalUpdate" value="-1.0"/>
+    <param name="resampleThreshold" value="0.5"/>
+    <param name="particles" value="30"/>
+    <param name="xmin" value="-50.0"/>
+    <param name="ymin" value="-50.0"/>
+    <param name="xmax" value="50.0"/>
+    <param name="ymax" value="50.0"/>
+    <param name="delta" value="0.05"/>
+    <param name="llsamplerange" value="0.01"/>
+    <param name="llsamplestep" value="0.01"/>
+    <param name="lasamplerange" value="0.005"/>
+    <param name="lasamplestep" value="0.005"/>
+  </node>
+</launch>

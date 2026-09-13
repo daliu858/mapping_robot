@@ -1,0 +1,60 @@
+JetBot Pro IMX219-83 RC2 overlay
+Date: 2026-08-01
+Expected base repository commit: b76d483
+Supersedes: RC1 overlay
+
+Purpose
+-------
+This archive is a complete overlay for the existing jetbot_pro source tree. It
+contains the RC1 stereo/semantic-map/teleoperation changes plus the RC2 camera
+rate correction derived from real Jetson Nano + IMX219-83 measurements. It
+excludes unchanged legacy voice files that contain historical embedded
+credentials.
+
+RC2 change
+----------
+- Direct stereo capture defaults to 640x480 at 30 FPS.
+- camera_select.launch chooses stereo=30 FPS and legacy mono=20 FPS.
+- The strict timestamp gate remains 20 ms; it was not weakened to hide bad
+  pairing.
+- Static tests lock these launch defaults.
+
+Safe first run
+--------------
+roslaunch jetbot_pro stereo_camera.launch \
+  start_stereo_image_proc:=false start_pair_gate:=false
+
+Do not enable stereo_image_proc or semantic mapping until the camera is rigidly
+mounted and real left/right calibration YAML files have been generated.
+
+Release gates completed on the PC
+---------------------------------
+- Python syntax: pass (21 package files)
+- XML parse: pass (38 files)
+- Unit tests: 14 pass, 2 OpenCV-dependent tests skipped
+- git diff --check: pass
+- Archive member/content/mode/path safety audit: pass
+
+Release gates completed on the Jetson
+-------------------------------------
+- Uploaded archive SHA256 matched the PC copy.
+- Pre-deploy tar backup created and verified.
+- ROS Melodic / Python 2 launch and parse checks: pass.
+- Missing declared dependency ros-melodic-vision-msgs installed and imported.
+- Forced CMake reconfigure and catkin_make -j1: pass.
+- Catkin/nosetests on Python 2.7: 16 pass, 0 errors, 0 failures.
+- ROS-expanded defaults: stereo left/right 30 FPS; legacy mono 20 FPS.
+- Both sensor-id 0 and sensor-id 1 publish raw images near 10 FPS.
+- At 10 FPS, nearest-frame |dt| median was about 34.0 ms and the 20 ms gate
+  correctly accepted 0%; this configuration is not usable for stereo depth.
+- At 30 FPS, nearest-frame |dt| median was about 1.4 ms, p95 about 2.6 ms,
+  100% were within 20 ms, and the gated topic stayed near 30 Hz.
+- Camera-only 30 FPS test left about 1.33 GB memory available on the 4 GB Nano.
+- Final default-parameter smoke test: left raw, right raw and gated sync topics
+  all remained near 30 Hz; all test ROS processes were then stopped.
+
+Still required before metric stereo depth is claimed
+----------------------------------------------------
+- Confirm physical left/right sensor IDs by covering one lens at a time.
+- Rigidly mount the board, then perform real stereo calibration.
+- Validate rectification, disparity, metric depth and full SLAM recording load.

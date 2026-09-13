@@ -1,0 +1,36 @@
+JetBot Pro IMX219-83 RC1 overlay
+Date: 2026-08-01
+Expected base repository commit: b76d483
+
+Purpose
+-------
+This archive is an overlay for the existing jetbot_pro source tree. It contains
+only the reviewed files changed or added for stereo capture, semantic mapping,
+teleoperation safety, build/install hygiene, and regression tests. It excludes
+the unchanged legacy voice files that contain historical embedded credentials.
+
+Safe first run
+--------------
+roslaunch jetbot_pro stereo_camera.launch \
+  start_stereo_image_proc:=false start_pair_gate:=false
+
+Do not enable stereo_image_proc or semantic mapping until the camera is rigidly
+mounted and real left/right calibration YAML files have been generated.
+
+Release gates completed on the PC
+---------------------------------
+- Python syntax: pass (24 files)
+- XML parse: pass (38 files)
+- Launch arg/include static check: pass
+- Unit tests: 12 pass, 2 OpenCV-dependent tests skipped
+- git diff --check: pass
+- GroundingDINO CLI UTF-8 and NMS smoke checks: pass
+
+Not completed until deployed on Jetson
+--------------------------------------
+- ROS Melodic/Python 2 import check
+- catkin_make
+- gscam dual-stream capture
+- left/right sensor-id confirmation
+- stereo calibration and disparity validation
+

@@ -1,0 +1,12 @@
+<launch>
+  <include file="$(find jetbot_pro)/launch/nav.launch">
+    <arg name="map_file" value="/home/jetbot/maps/home_floor_20260804_glass_fixed.yaml"/>
+    <arg name="initial_pose_x" value="-0.610"/>
+    <arg name="initial_pose_y" value="3.610"/>
+    <arg name="initial_pose_a" value="1.471"/>
+    <arg name="start_camera" value="false"/>
+    <arg name="start_move_base" value="false"/>
+    <arg name="start_stereo_image_proc" value="false"/>
+  </include>
+  <include file="$(find jetbot_pro)/launch/joystick_teleop.launch"/>
+</launch>
