@@ -1,4 +1,4 @@
-# semantic-slam-car
+# mapping_robot
 
 An indoor **semantic mapping robot** built on a Waveshare JetBot Pro (Jetson Nano, ROS1 Melodic).
 One supervised tele-operated survey run produces:
