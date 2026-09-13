@@ -27,6 +27,18 @@ one supervised survey pass
                                 └─ room segmentation → floor plan
 ```
 
+## Final result
+
+The end-to-end output of the pipeline — one supervised survey pass of a real
+apartment, turned into a labeled architectural floor plan (room segmentation,
+areas, doors/furniture POIs from open-vocabulary detection, unexplored regions
+marked):
+
+![Labeled floor plan produced by the full pipeline](docs/img/floorplan_v31.png)
+
+The corresponding rosbag and occupancy maps are not distributed (see below);
+this rendering is published deliberately as the project's final artifact.
+
 ## Repository layout
 
 | Path | What it is |
@@ -61,8 +73,9 @@ Pinned upstream commits:
 
 ## What is intentionally *not* in this repository
 
-- Recorded rosbags and the maps/floor plans they produced (they were surveyed in
-  a private home; both privacy-sensitive and far too large for git).
+- Recorded rosbags and the raw occupancy maps (they were surveyed in a private
+  home; both privacy-sensitive and far too large for git). The single rendered
+  floor plan above is the only surveyed artifact published, by choice.
 - Model weights (see `tools/requirements-offline.txt` and the detection scripts
   for how to fetch them).
 - API credentials of any kind. All external services are read from environment
