@@ -105,3 +105,41 @@ surveys.
 Original code in this repository (everything outside `patches/`) is released
 under the MIT License (see `LICENSE`). The patches remain subject to the terms
 of their respective upstream projects — see `THIRD_PARTY.md`.
+
+## What was sanitized before publishing (read this before filing a bug)
+
+This repository was extracted from a private working tree. Before you conclude
+that something is broken, check whether it is one of these deliberate removals:
+
+1. **No recorded data ships with the repo.** All rosbags, occupancy maps
+   (`.pgm`/`.yaml`) and their derived outputs were surveyed in a private home
+   and are not distributed. Anything that takes a `--map` / `--objects` / bag
+   path needs **your own** survey data. In particular,
+   `floorplan/make_floorplan.py`'s built-in default map path points at the
+   author's private map — always pass `--map` explicitly.
+2. **`floorplan/doors_sample.yaml` contains fictional coordinates.** It is a
+   format example only; real door positions were replaced for privacy.
+3. **Upstream sources are not vendored.** `overlay/` + `patches/` only become a
+   buildable catkin workspace after running `./setup_workspace.sh` (it clones
+   the pinned upstream commits and assembles everything). Building this repo
+   directly with `catkin_make` will not work.
+4. **The patch deliberately skips the vendor voice-demo files**
+   (`scripts/aiui.py`, `scripts/iat.py`, `scripts/tts_cn.py`,
+   `launch/tts.launch`, `scripts/multipoint_nav.py`): upstream hard-codes
+   vendor API credentials there, and voice control is unrelated to semantic
+   mapping. After `setup_workspace.sh`, those files remain exactly as upstream
+   ships them.
+5. **`deploy/` is a historical archive.** Those scripts ran on the actual
+   robot; absolute paths (`/home/jetbot/...`), the LAN IP `192.168.3.31` and
+   host-specific assumptions were kept for authenticity and will need adapting
+   to your setup.
+6. **No credentials of any kind are included.** External services (e.g. the
+   optional LLM room-naming step in `floorplan/`) read keys from environment
+   variables / a local `.env` that you supply yourself. Detection model
+   weights are also fetched separately (see `tools/requirements-offline.txt`).
+
+## Contact
+
+If anything doesn't work, or if you have **any** concern about this repository
+(licensing, privacy, attribution — anything at all), please contact me right
+away: **mapping_robot@proton.me**. I will respond and fix it.
