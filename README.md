@@ -1,6 +1,6 @@
-![mapping_robot](docs/img/logo.png)
+![SCOUT — Semantic Cartography Over Unknown Terrain](docs/img/logo.png)
 
-# mapping_robot
+# SCOUT — Semantic Cartography Over Unknown Terrain
 
 ![System architecture](docs/img/architecture.png)
 
