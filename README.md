@@ -1,5 +1,7 @@
 # mapping_robot
 
+![System architecture](docs/img/architecture.png)
+
 An indoor **semantic mapping robot** built on a Waveshare JetBot Pro (Jetson Nano, ROS1 Melodic).
 One supervised tele-operated survey run produces:
 
@@ -16,16 +18,6 @@ The motivation: mainstream navigation apps do not work inside buildings because
 providers cannot obtain effective, up-to-date indoor data. A small robot that any
 student can run (with the building owner's approval) can build a
 building-specific semantic map instead.
-
-```text
-one supervised survey pass
-  └─ gmapping + stereo video + LiDAR + odom + TF
-        └─ final occupancy map + atomically committed rosbag
-              └─ offline open-vocabulary detection (PC)
-                    └─ offline stereo depth + TF projection
-                          └─ labeled semantic map (PNG + YAML)
-                                └─ room segmentation → floor plan
-```
 
 ## Final result
 
