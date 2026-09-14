@@ -2,6 +2,9 @@
 
 # SCOUT — Semantic Cartography Over Unknown Terrain
 
+> **Author & maintainer:** [daliu858](https://github.com/daliu858) — design, architecture, field testing, review.
+> Development used AI pair programming; those commits are co-authored with Claude, as the contributor list reflects.
+
 ![System architecture](docs/img/architecture.png)
 
 An indoor **semantic mapping robot** built on a Waveshare JetBot Pro (Jetson Nano, ROS1 Melodic).
