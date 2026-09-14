@@ -1,3 +1,5 @@
+![mapping_robot](docs/img/logo.png)
+
 # mapping_robot
 
 ![System architecture](docs/img/architecture.png)
