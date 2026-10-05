@@ -8,10 +8,11 @@
 ![System architecture](docs/img/architecture.png)
 
 An indoor **semantic mapping robot** built on a Waveshare JetBot Pro (Jetson Nano, ROS1 Melodic).
-One supervised tele-operated survey run produces:
+The workflow combines supervised tele-operated surveys with offline processing:
 
 1. a 2D occupancy-grid map (gmapping), recorded together with a synchronized
-   stereo-camera / LiDAR / odometry / TF rosbag ("one-pass capture");
+   stereo-camera / LiDAR / odometry / TF rosbag ("one-pass capture" within each
+   survey run);
 2. offline open-vocabulary object detection (LLMDet / GroundingDINO — no
    task-specific training) on the recorded stereo frames;
 3. stereo disparity depth + SLAM TF projection, placing detected points of
@@ -26,14 +27,17 @@ building-specific semantic map instead.
 
 ## Final result
 
-The end-to-end output of the pipeline — one supervised survey pass of a real
-apartment, turned into a labeled architectural floor plan (room segmentation,
+The final result combines data from **two supervised tele-operated survey runs**
+of a real apartment into a labeled architectural floor plan (room segmentation,
 areas, doors/furniture POIs from open-vocabulary detection, unexplored regions
-marked):
+marked). "One-pass capture" describes the synchronized recording within each
+run; the final rendering below uses data from both runs. In particular,
+`floorplan/make_floorplan_v31.py` uses trajectories from both survey bags for its
+visibility check.
 
 ![Labeled floor plan produced by the full pipeline](docs/img/floorplan_v31.png)
 
-The corresponding rosbag and occupancy maps are not distributed (see below);
+The corresponding rosbags and occupancy maps are not distributed (see below);
 this rendering is published deliberately as the project's final artifact.
 
 ## Repository layout
