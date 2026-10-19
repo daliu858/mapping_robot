@@ -17,8 +17,8 @@ The workflow combines supervised tele-operated surveys with offline processing:
    task-specific training) on the recorded stereo frames;
 3. stereo disparity depth + SLAM TF projection, placing detected points of
    interest (doors, sofas, cabinets, vending machines, ...) onto the map;
-4. room segmentation (Voronoi-based) and an optional labeled floor-plan
-   rendering pipeline (`floorplan/`).
+4. room segmentation (two candidate approaches, see below) and an optional
+   labeled floor-plan rendering pipeline (`floorplan/`).
 
 The motivation: mainstream navigation apps do not work inside buildings because
 providers cannot obtain effective, up-to-date indoor data. A small robot that any
@@ -31,14 +31,29 @@ The final result combines data from **two supervised tele-operated survey runs**
 of a real apartment into a labeled architectural floor plan (room segmentation,
 areas, doors/furniture POIs from open-vocabulary detection, unexplored regions
 marked). "One-pass capture" describes the synchronized recording within each
-run; the final rendering below uses data from both runs. In particular,
-`floorplan/make_floorplan_v31.py` uses trajectories from both survey bags for its
+run; the final renderings below use data from both runs. In particular,
+both floor-plan scripts use trajectories from both survey bags for their
 visibility check.
 
-![Labeled floor plan produced by the full pipeline](docs/img/floorplan_v31.png)
+There are currently two candidate approaches to the room segmentation step,
+shown side by side below on the same map, outline and POIs. Further research
+and testing are needed before settling on one.
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/img/floorplan_v31.png" alt="Floor plan v3.1: zones from corner chords"><br>
+      <sub><b>Approach A</b>: zones cut along chords between concave corners of the outline (<code>floorplan/make_floorplan_v31.py</code>)</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/img/floorplan_v32.png" alt="Floor plan v3.2: Voronoi room segmentation"><br>
+      <sub><b>Approach B</b>: Voronoi graph-based room segmentation, after Bormann et al., ICRA 2016, Sec. III-C (<code>floorplan/make_floorplan_v32.py</code>)</sub>
+    </td>
+  </tr>
+</table>
 
 The corresponding rosbags and occupancy maps are not distributed (see below);
-this rendering is published deliberately as the project's final artifact.
+these renderings are published deliberately as the project's final artifacts.
 
 ## Repository layout
 

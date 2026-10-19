@@ -221,7 +221,12 @@ def voronoi_segment(free_c, res, min_room=2.0, single_nb=12.5, verbose=True):
     # also returns the clearance (distance to nearest obstacle) at every
     # skeleton pixel -- that distance is what defines critical points below.
     # -----------------------------------------------------------------------
-    skel, clearance = medial_axis(free_b, return_distance=True)
+    # medial_axis breaks ties randomly; seed it so a rerun gives the same map.
+    try:
+        skel, clearance = medial_axis(free_b, return_distance=True, rng=0)
+    except TypeError:  # scikit-image < 0.23 names the seed random_state
+        skel, clearance = medial_axis(free_b, return_distance=True,
+                                      random_state=0)
     # clearance is defined everywhere; keep only on-skeleton values.
     skel_clear = np.where(skel, clearance, 0.0)
 
@@ -364,7 +369,11 @@ def voronoi_segment(free_c, res, min_room=2.0, single_nb=12.5, verbose=True):
         if ang < ANG_MIN:
             continue
         # draw the critical line obstacle1 -- critpoint -- obstacle2 (1px wall)
-        cv2.line(cut, (ox1, oy1), (ox2, oy2), 0, 1)
+        # LINE_4 (not the default LINE_8): the cells below are 8-connected
+        # components, and an 8-connected diagonal line has corner gaps that an
+        # 8-connected region leaks through, so on maps whose doors are not
+        # axis-aligned the cut silently fails. A 4-connected line seals it.
+        cv2.line(cut, (ox1, oy1), (ox2, oy2), 0, 1, lineType=cv2.LINE_4)
         drawn += 1
     if verbose:
         print("Voronoi: critical lines drawn=%d (wide-angle kept, corners dropped)"
