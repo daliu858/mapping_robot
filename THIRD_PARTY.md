@@ -5,9 +5,13 @@ them are redistributed in this repository unless explicitly stated.
 
 ## Patched, not redistributed
 
+The repository's MIT License applies to its original code. Patches against
+third-party projects remain subject to their upstream terms and are not
+relicensed under this repository's MIT License.
+
 - **waveshare/jetbot_pro** — https://github.com/waveshare/jetbot_pro
   Robot base package for the Waveshare JetBot Pro. Upstream declares no
-  open-source license (`<license>TODO</license>`), so its source is **not**
+  open-source license, so its source is **not**
   included here. `patches/jetbot_pro_local_changes.patch` contains only the
   local modifications as a diff against commit
   `b76d483fbd5ceb41a66be4945ed2fc712b5d36a4`; `overlay/jetbot_pro/` contains

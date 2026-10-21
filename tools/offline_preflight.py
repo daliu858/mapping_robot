@@ -15,7 +15,7 @@ if _TOOLS_DIR not in sys.path:
 from map_identity import load_map_identity
 from rosbags_index_compat import patch_rosbags_index_headers
 _ROBOT_SCRIPTS = os.path.join(
-    os.path.dirname(_TOOLS_DIR), "src", "jetbot_pro", "scripts")
+    os.path.dirname(_TOOLS_DIR), "overlay", "jetbot_pro", "scripts")
 if _ROBOT_SCRIPTS not in sys.path:
     sys.path.insert(0, _ROBOT_SCRIPTS)
 from replay_contract import (camera_transform_matches,

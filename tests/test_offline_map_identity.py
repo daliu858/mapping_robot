@@ -29,16 +29,39 @@ PREFLIGHT_SPEC.loader.exec_module(PREFLIGHT)
 
 class OfflineMapIdentityTest(unittest.TestCase):
     def setUp(self):
-        self.objects_path = os.path.join(
-            ROOT, "maps", "mymap_smoke_objects.yaml")
-        self.topology_path = os.path.join(
-            ROOT, "maps", "mymap_smoke_topology.yaml")
-        with open(self.objects_path,
-                  encoding="utf-8") as stream:
-            self.objects = yaml.safe_load(stream)
-        with open(self.topology_path,
-                  encoding="utf-8") as stream:
-            self.topology = yaml.safe_load(stream)
+        # 用短合成文档验证来源绑定，不依赖未公开的住宅记录。
+        directory = tempfile.TemporaryDirectory(dir=ROOT)
+        self.addCleanup(directory.cleanup)
+        self.objects_path = os.path.join(directory.name, "objects.yaml")
+        self.topology_path = os.path.join(directory.name, "topology.yaml")
+        provenance = {
+            "completed": True, "frame": "map",
+            "recording_token": "synthetic-identity-test",
+            "source_bag_sha256": "c" * 64,
+            "map_image_sha256": "a" * 64,
+            "map_manifest_sha256": "b" * 64,
+            "camera_mount": [0.1, 0.0, 0.2, 0.0, 0.0, 0.0],
+        }
+        self.objects = dict(provenance, schema="slam-car-semantic-objects-v1",
+                            objects=[
+                                {"label": "chair", "x": 0.5, "y": 1.0, "hits": 2},
+                                {"label": "table", "x": 1.0, "y": 1.0, "hits": 2},
+                                {"label": "door", "x": 1.5, "y": 1.0, "hits": 2},
+                            ])
+        Path(self.objects_path).write_text(
+            yaml.safe_dump(self.objects), encoding="utf-8")
+        self.topology = dict(
+            provenance, schema="slam-car-room-topology-v1",
+            source_objects_sha256=hashlib.sha256(
+                Path(self.objects_path).read_bytes()).hexdigest(),
+            resolution=0.05, origin=[0.0, 0.0, 0.0],
+            rooms=[{"id": 1, "status": "room", "area_m2": 4.0,
+                    "centroid_map": [1.0, 1.0],
+                    "polygon_map": [[0.0, 0.0], [2.0, 0.0],
+                                    [2.0, 2.0], [0.0, 2.0]]}],
+            doors=[], topology=[])
+        Path(self.topology_path).write_text(
+            yaml.safe_dump(self.topology), encoding="utf-8")
 
     def test_matching_hash_is_preserved_in_final_map(self):
         result = MERGE.merge_layers(

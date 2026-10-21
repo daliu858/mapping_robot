@@ -2,11 +2,6 @@ MIT License
 
 Copyright (c) 2026 daliu858
 
-Applies to the original code in this repository (everything outside the
-patches/ directory). Files under patches/ are diffs against third-party
-projects and remain subject to the terms of their respective upstream
-projects; see THIRD_PARTY.md.
-
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights

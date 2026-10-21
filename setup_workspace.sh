@@ -26,8 +26,8 @@ clone_pin https://github.com/waveshare/jetbot_pro   "$TARGET/jetbot_pro" "$JETBO
 clone_pin https://github.com/ros-drivers/gscam      "$TARGET/gscam"      "$GSCAM_COMMIT"
 
 echo "==> applying local patches"
-git -C "$TARGET/jetbot_pro" apply --whitespace=nowarn "$HERE/patches/jetbot_pro_local_changes.patch"
-git -C "$TARGET/gscam"      apply --whitespace=nowarn "$HERE/patches/gscam_local_changes.patch"
+git -C "$TARGET/jetbot_pro" apply --ignore-space-change --whitespace=nowarn "$HERE/patches/jetbot_pro_local_changes.patch"
+git -C "$TARGET/gscam"      apply --ignore-space-change --whitespace=nowarn "$HERE/patches/gscam_local_changes.patch"
 
 echo "==> copying overlay files"
 cp -r "$HERE/overlay/jetbot_pro/." "$TARGET/jetbot_pro/"

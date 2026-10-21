@@ -7,11 +7,12 @@ import re
 import unittest
 import xml.etree.ElementTree as ET
 
+# 上游源码契约需先组装固定版本工作区；CI 会运行全部这些检查。
+from workspace_support import PACKAGE_ROOT, requires_upstream
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+ROOT = str(PACKAGE_ROOT)
 LAUNCH = os.path.join(ROOT, "launch")
-REPO = os.path.dirname(os.path.dirname(ROOT))
-RELEASES = os.path.join(REPO, "releases")
 
 
 def launch_args(path):
@@ -20,6 +21,7 @@ def launch_args(path):
 
 
 class PipelineContractsTest(unittest.TestCase):
+    @requires_upstream
     def test_in_package_include_arguments_are_declared_by_child(self):
         pattern = re.compile(
             r"^\$\(find jetbot_pro\)/launch/([A-Za-z0-9_.-]+\.launch)$")
@@ -53,6 +55,7 @@ class PipelineContractsTest(unittest.TestCase):
                         "%s omits required args %s for %s" %
                         (name, sorted(required - passed), child_name))
 
+    @requires_upstream
     def test_required_physical_and_map_inputs_have_no_guessed_default(self):
         for name, required in {
                 "nav.launch": ("map_file", "initial_pose_x", "initial_pose_y",
@@ -75,6 +78,7 @@ class PipelineContractsTest(unittest.TestCase):
                 self.assertIsNone(args[arg].get("default"),
                                   "%s must require %s" % (name, arg))
 
+    @requires_upstream
     def test_capture_and_mapping_nodes_are_installed(self):
         with open(os.path.join(ROOT, "CMakeLists.txt"), "r") as stream:
             cmake = stream.read()
@@ -297,150 +301,22 @@ class PipelineContractsTest(unittest.TestCase):
             self.assertNotIn(forbidden, source)
         self.assertIn("slam.launch", source)
 
-    def test_amcl_survey_deploys_the_actual_overlay_recorder(self):
-        with open(os.path.join(RELEASES, "start_nav_survey.sh"), "r") as stream:
-            start = stream.read()
-        source_recorder = (
-            "/home/jetbot/catkin_ws/src/jetbot_pro/scripts/"
-            "checked_rosbag_record.py")
-        overlay_recorder = (
-            "/home/jetbot/catkin_ws/devel/lib/jetbot_pro/"
-            "checked_rosbag_record.py")
-        self.assertIn("checked_rosbag_record.py", start)
-        self.assertIn('cp "/tmp/$py" '
-                      '"/home/jetbot/catkin_ws/src/jetbot_pro/scripts/$py"',
-                      start)
-        self.assertIn('cp "/tmp/$py" '
-                      '"/home/jetbot/catkin_ws/devel/lib/jetbot_pro/$py"',
-                      start)
-        for sibling in ("checked_rosbag_record.py", "scan_clip.py",
-                        "scan_clip_core.py", "map_identity.py",
-                        "replay_contract.py"):
-            self.assertIn(sibling, start)
-        chmod = start[start.index("chmod +x " + source_recorder):]
-        self.assertIn(overlay_recorder, chmod)
-        self.assertIn("cp /tmp/run_amcl_survey_20260827.sh", start)
 
-    def test_amcl_survey_restart_never_deletes_or_broad_matches_amcl(self):
-        with open(os.path.join(RELEASES, "restart_amcl_survey.sh"), "r") as stream:
-            restart = stream.read()
-        self.assertNotRegex(
-            restart, r"rm\s+-[^\n]*semantic_survey_home.*\.bag")
-        self.assertNotIn("pkill -9 -f '/amcl'", restart)
-        self.assertIn("/opt/ros/melodic/lib/amcl/amcl", restart)
-        self.assertIn("SURVEY_BAG", restart)
-
-    def test_amcl_survey_has_one_collision_checked_bag_argument(self):
-        launch = ET.parse(os.path.join(
-            RELEASES, "amcl_survey_20260827.launch")).getroot()
-        args = {node.get("name"): node for node in launch.findall("arg")}
-        self.assertEqual(args["bag"].get("default"), "$(env SURVEY_BAG)")
-        include = launch.find("include")
-        passed = {node.get("name"): node.get("value")
-                  for node in include.findall("arg")}
-        self.assertEqual(passed["bag"], "$(arg bag)")
-        with open(os.path.join(
-                RELEASES, "run_amcl_survey_20260827.sh"), "r") as stream:
-            runner = stream.read()
-        for suffix in ('"$SURVEY_BAG"', '"$SURVEY_BAG.active"',
-                       '"$SURVEY_BAG.complete.json"',
-                       '"$SURVEY_BAG.failed.json"'):
-            self.assertIn(suffix, runner)
-        self.assertIn('bag:="$SURVEY_BAG"', runner)
-
-    def test_amcl_survey_entry_preflights_before_side_effects(self):
-        path = os.path.join(RELEASES, "start_nav_survey.sh")
-        with open(path, "r") as stream:
-            start = stream.read()
-        for word in ("DISK_LOW", "FPS_INVALID", "NVARGUS_STALE",
-                     "df -P -k /", "1572864",
-                     "sudo -n -l systemctl restart nvargus-daemon"):
-            self.assertIn(word, start)
-        preflight_at = start.index("DISK_AVAILABLE_KB=")
-        self.assertLess(preflight_at, start.index("BAG_ROOT="))
-        self.assertLess(preflight_at, start.index("cp /tmp/"))
-        self.assertLess(preflight_at,
-                        start.index("bash /tmp/restart_amcl_survey.sh"))
-        self.assertLess(start.index("FPS_INVALID"),
-                        start.index("BAG_ROOT="))
-        self.assertLess(start.index("NVARGUS_STALE"),
-                        start.index("BAG_ROOT="))
-        self.assertIn("grep -Eq 'Failed to create CaptureSession|Could not get gstreamer sample'",
-                      start)
-        self.assertIn("this script does not sudo", start)
-        self.assertIn("if ! DISK_AVAILABLE_KB=$(df -P -k /", start)
-
-    def test_amcl_survey_forces_the_robot_tested_fps(self):
-        release_path = os.path.join(RELEASES, "amcl_survey_20260827.launch")
-        release_root = ET.parse(release_path).getroot()
-        include = release_root.find("include")
-        passed = {node.get("name"): node.get("value")
-                  for node in include.findall("arg")}
-        self.assertEqual(passed.get("fps"), "15")
+    def test_survey_uses_the_robot_tested_fps(self):
         survey_root = ET.parse(os.path.join(
             LAUNCH, "semantic_survey.launch")).getroot()
         args = {node.get("name"): node.get("default")
                 for node in survey_root.findall("arg")}
         self.assertEqual(args.get("fps"), "15")
-        with open(os.path.join(RELEASES, "start_nav_survey.sh"), "r") as stream:
-            start = stream.read()
-        self.assertIn("grep -q 'name=\"fps\" value=\"15\"'", start)
 
-    def test_amcl_survey_entry_exits_zero_only_for_joystick_ready(self):
-        with open(os.path.join(RELEASES, "start_nav_survey.sh"), "r") as stream:
-            start = stream.read()
-        self.assertNotIn("goal 1 result=", start)
-        self.assertNotIn("FIRST_GOAL", start)
-        self.assertNotIn("starting waypoint tour", start)
-        self.assertNotIn("TOUR_STARTED", start)
-        self.assertNotIn("run_survey_tour.sh", start)
-        self.assertEqual(start.count("exit 0"), 1)
-        for word in ("JOYSTICK_READY", "FAILED_START", "NO_ACTIVE",
-                     "exit 2", "exit 3"):
-            self.assertIn(word, start)
-        self.assertIn("flock -n 9", start)
-        for line in start.splitlines():
-            if "restart_amcl_survey.sh" in line and \
-                    line.lstrip().startswith("bash"):
-                self.assertIn("9>&-", line)
-
-    def test_amcl_survey_entry_does_not_auto_start_the_openloop_tour(self):
-        with open(os.path.join(RELEASES, "start_nav_survey.sh"), "r") as stream:
-            start = stream.read()
-        self.assertIn("JOYSTICK_READY", start)
-        self.assertIn("complete_survey.sh", start)
-        self.assertIn("joystick_teleop.launch", start)
-        self.assertNotIn("starting openloop tour", start)
-        self.assertNotIn("nohup /home/jetbot/run_survey_tour.sh", start)
-
-    def test_tour_crash_fail_closes_recorder_but_interrupt_leaves_it_open(self):
-        with open(os.path.join(
-                RELEASES, "survey_tour_20260827.py"), "r") as stream:
-            tour = stream.read()
+    def test_recorder_owns_transactions_without_route_knowledge(self):
         with open(os.path.join(
                 ROOT, "scripts", "checked_rosbag_record.py"), "r") as stream:
             recorder = stream.read()
-        # Route knowledge lives in the tour; the recorder owns only the
-        # recording transaction.  .complete.json therefore never implies
-        # route success -- a reached=0 tour still completes the bag and
-        # reports the route result through its own exit code.
-        self.assertIn('"/offline_recorder/complete"', tour)
-        self.assertIn('"/offline_recorder/fail"', tour)
-        self.assertIn("return 0 if reached >= 1 else 2", tour)
         self.assertIn('"~complete"', recorder)
         self.assertIn('"~fail"', recorder)
         self.assertNotIn("WAYPOINTS", recorder)
         self.assertNotIn("survey_tour", recorder)
-        # Operator interrupt re-raises untouched (rerun_tour.sh may rerun
-        # against the still-healthy recording); every other crash stops the
-        # wheels and fail-closes the transaction explicitly.
-        main_body = tour[tour.index("def main():"):tour.index("if __name__")]
-        interrupt_at = main_body.index("except rospy.ROSInterruptException:")
-        crash_at = main_body.index("except Exception as error:")
-        self.assertLess(interrupt_at, crash_at)
-        self.assertNotIn("_abort_recorder", main_body[interrupt_at:crash_at])
-        self.assertIn("_crash_stop(tour)", main_body[crash_at:])
-        self.assertIn("_abort_recorder(", main_body[crash_at:])
 
     def test_two_pass_survey_uses_amcl_and_checked_recorder(self):
         path = os.path.join(LAUNCH, "semantic_survey.launch")
@@ -471,6 +347,7 @@ class PipelineContractsTest(unittest.TestCase):
         self.assertIn("semantic_survey.launch", alias_source)
         self.assertNotIn("slam_capture.launch", alias_source)
 
+    @requires_upstream
     def test_gmapping_fails_closed_instead_of_resetting_map_frame(self):
         root = ET.parse(os.path.join(LAUNCH, "gmapping.launch")).getroot()
         node = next(node for node in root.findall("node")
@@ -478,6 +355,7 @@ class PipelineContractsTest(unittest.TestCase):
         self.assertEqual(node.get("required"), "true")
         self.assertEqual(node.get("respawn"), "false")
 
+    @requires_upstream
     def test_teb_local_costmap_uses_only_live_obstacles(self):
         path = os.path.join(
             ROOT, "config", "diff", "local_costmap_params.yaml")
@@ -487,6 +365,7 @@ class PipelineContractsTest(unittest.TestCase):
         self.assertIn("costmap_2d::VoxelLayer", source)
         self.assertIn("costmap_2d::InflationLayer", source)
 
+    @requires_upstream
     def test_global_costmap_keeps_saved_map_static_layer(self):
         path = os.path.join(
             ROOT, "config", "diff", "global_costmap_params.yaml")
@@ -496,6 +375,7 @@ class PipelineContractsTest(unittest.TestCase):
         self.assertIn("costmap_2d::InflationLayer", source)
         self.assertNotIn("static_map: true", source)
 
+    @requires_upstream
     def test_finalize_token_service_is_generated(self):
         with open(os.path.join(ROOT, "CMakeLists.txt"), "r") as stream:
             cmake = stream.read()
@@ -506,6 +386,7 @@ class PipelineContractsTest(unittest.TestCase):
             source = stream.read()
         self.assertIn("string token", source)
 
+    @requires_upstream
     def test_base_serial_is_nonblocking_serialized_and_stops_before_close(self):
         source_path = os.path.join(ROOT, "src", "jetbot.cpp")
         with open(source_path, "r") as stream:
@@ -522,6 +403,7 @@ class PipelineContractsTest(unittest.TestCase):
         self.assertLess(stop_at, join_at)
         self.assertLess(join_at, close_at)
 
+    @requires_upstream
     def test_base_startup_exceptions_cannot_bypass_fail_stop_cleanup(self):
         source_path = os.path.join(ROOT, "src", "jetbot.cpp")
         with open(source_path, "r") as stream:
@@ -537,6 +419,7 @@ class PipelineContractsTest(unittest.TestCase):
         self.assertLess(std_catch_at, final_zero_at)
         self.assertIn("return exit_code", source)
 
+    @requires_upstream
     def test_uncalibrated_hardware_imu_is_fail_closed_by_default(self):
         root = ET.parse(os.path.join(LAUNCH, "jetbot.launch")).getroot()
         args = {node.get("name"): node.get("default")
@@ -548,6 +431,7 @@ class PipelineContractsTest(unittest.TestCase):
                   for node in ekf.findall("param")}
         self.assertEqual(params.get("imu_used"), "false")
 
+    @requires_upstream
     def test_csi_gstreamer_pipeline_keeps_parseable_terminal_element(self):
         root = ET.parse(os.path.join(LAUNCH, "csi_camera.launch")).getroot()
         defaults = {node.get("name"): node.get("default")
@@ -569,6 +453,7 @@ class PipelineContractsTest(unittest.TestCase):
         self.assertEqual(stages[-1], "videoconvert")
         self.assertNotIn("/", stages[-1])
 
+    @requires_upstream
     def test_geometry_mapping_keeps_camera_compute_opt_in(self):
         for name in ("slam.launch", "slam_nav.launch"):
             root = ET.parse(os.path.join(LAUNCH, name)).getroot()
@@ -583,6 +468,7 @@ class PipelineContractsTest(unittest.TestCase):
             self.assertTrue(includes[0].get("file", "").endswith(
                 "/camera_select.launch"), name)
 
+    @requires_upstream
     def test_base_control_loop_sends_at_fixed_50hz_and_retains_fail_stop(self):
         source_path = os.path.join(ROOT, "src", "jetbot.cpp")
         with open(source_path, "r") as stream:
@@ -623,6 +509,7 @@ class PipelineContractsTest(unittest.TestCase):
         self.assertLess(final.index("stop_robot(pub)"),
                         final.index("rospy.signal_shutdown"))
 
+    @requires_upstream
     def test_gscam_has_bounded_pull_and_idempotent_failure_cleanup(self):
         source_path = os.path.join(
             os.path.dirname(ROOT), "gscam", "src", "gscam.cpp")
@@ -653,6 +540,7 @@ class PipelineContractsTest(unittest.TestCase):
         self.assertIn("gscam_driver_->stop()", nodelet)
         self.assertIn("stream_thread_->joinable()", nodelet)
 
+    @requires_upstream
     def test_base_safety_logic_has_a_real_cpp_test_target(self):
         with open(os.path.join(ROOT, "CMakeLists.txt"), "r") as stream:
             cmake = stream.read()

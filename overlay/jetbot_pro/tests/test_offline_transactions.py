@@ -11,6 +11,9 @@ import types
 import unittest
 import xml.etree.ElementTree as ET
 
+# 只有电机驱动启动契约依赖未转发的上游 launch；其余事务测试无需 ROS。
+from workspace_support import PACKAGE_ROOT, requires_upstream
+
 try:
     from importlib import util as importlib_util
 except ImportError:
@@ -81,9 +84,9 @@ def _payload(state, token="abc", reason=None, pose_source="gmapping"):
 
 
 class OfflineTransactionTest(unittest.TestCase):
+    @requires_upstream
     def test_motor_driver_crash_requires_explicit_full_stack_restart(self):
-        package_root = os.path.dirname(os.path.dirname(os.path.abspath(
-            __file__)))
+        package_root = str(PACKAGE_ROOT)
         launch_root = ET.parse(os.path.join(
             package_root, "launch", "jetbot.launch")).getroot()
         nodes = [node for node in launch_root.findall("node")

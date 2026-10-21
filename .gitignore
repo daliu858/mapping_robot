@@ -7,6 +7,7 @@
 *.bag
 *.bag.active
 *.pgm
+!floorplan/fixtures/*.pgm
 maps/
 data/
 floorplan/out*/
@@ -15,6 +16,7 @@ floorplan/out*/
 __pycache__/
 *.pyc
 .pytest_cache/
+.test-workspace/
 
 # build artifacts
 build/

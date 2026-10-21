@@ -1,4 +1,5 @@
 """Regression: mixed INDEX_DATA field order after rospy bag append."""
+# 本测试依赖真实 rosbags 读取器；轻量 CI 不安装离线 bag 读取依赖。
 from __future__ import print_function
 
 import importlib.util
@@ -7,6 +8,10 @@ import struct
 import unittest
 from collections import defaultdict
 from io import BytesIO
+
+import pytest
+
+pytest.importorskip("rosbags.rosbag1.reader", reason="requires the optional rosbags reader")
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

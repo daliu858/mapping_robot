@@ -21,23 +21,44 @@ Pipeline (geometry 100% from map + trajectory data):
 LLM (me) only assigns zone names (ZONE_NAMES below, with rationale in the
 output YAML). No geometry is invented.
 
-Usage: python make_floorplan_v31.py
-Outputs: floorplan/out_v31/floorplan_v31.png (+ .svg, zones_v31.yaml)
+Usage: python make_floorplan_v31.py --map MAP.yaml --pois POIS.yaml [--bag SURVEY.bag | --no-visibility]
+Outputs: floorplan/out_demo/floorplan_v31.png (+ .svg, zones_v31.yaml)
 """
+import argparse
 import json
 import math
 import os
 import sys
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+parser.add_argument("--map", required=True, help="occupancy-map YAML")
+parser.add_argument("--pois", required=True, help="semantic POI YAML")
+parser.add_argument("--out", default=os.path.join(HERE, "out_demo"),
+                    help="output directory")
+parser.add_argument("--bag", action="append", default=[],
+                    help="survey bag for visibility checks; repeat for multiple bags")
+parser.add_argument("--no-visibility", action="store_true",
+                    help="skip visibility checks without opening survey bags")
+args = parser.parse_args()
+for name, filename in (("--map", args.map), ("--pois", args.pois)):
+    if not os.path.isfile(filename):
+        parser.error(f"{name} file does not exist: {filename}")
+if not args.no_visibility:
+    if not args.bag:
+        parser.error("visibility checks require --bag; use --no-visibility to skip them")
+    for filename in args.bag:
+        if not os.path.isfile(filename):
+            parser.error(f"--bag file does not exist: {filename}")
+
 import cv2
 import numpy as np
 import yaml
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-MAP_YAML = os.path.join(ROOT, "maps", "home_floor_20260830_v2.yaml")
-POI_YAML = os.path.join(ROOT, "data", "semantic_objects_final_combined.yaml")
-OUT_DIR = os.path.join(HERE, "out_v31")
+MAP_YAML = args.map
+POI_YAML = args.pois
+OUT_DIR = args.out
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # ---------------- tunables ----------------
@@ -54,9 +75,8 @@ ZONE_MAX = 5           # stop cutting at this many zones
 BUBBLE_R_M = 0.55      # unexplored bubble radius
 FIG_DPI = 200
 # v3.1 visibility verification
-VIS_CHECK = True       # master switch for the visibility pass
-BAGS = [os.path.join(ROOT, "data", "semantic_survey_home_20260830_30.bag"),
-        os.path.join(ROOT, "data", "semantic_survey_home_20260830_31.bag")]
+VIS_CHECK = not args.no_visibility
+BAGS = args.bag
 POSE_STEP_M = 0.2      # thin trajectory to one pose per this distance
 N_RAY = 1440           # rays per pose (0.25 deg)
 RAY_MAX_M = 9.0        # ray length cap
@@ -83,7 +103,10 @@ ZONE_NAMES = {
 }
 
 # ---------------- load map ----------------
-cfg = yaml.safe_load(open(MAP_YAML))
+with open(MAP_YAML, encoding="utf-8") as stream:
+    cfg = yaml.safe_load(stream)
+if cfg.get("synthetic", False):
+    ZONE_NAMES = {}
 RES = float(cfg["resolution"])
 OX, OY = float(cfg["origin"][0]), float(cfg["origin"][1])
 img_path = os.path.join(os.path.dirname(MAP_YAML),
@@ -223,7 +246,7 @@ hull_idx = cv2.convexHull(smooth.reshape(-1, 1, 2), returnPoints=False)
 defects = cv2.convexityDefects(smooth.reshape(-1, 1, 2), hull_idx)
 notches = []
 if defects is not None:
-    for d in defects[:, 0]:
+    for d in defects.reshape(-1, 4):
         dep = d[3] / 256.0 * RES
         if dep >= NOTCH_MIN_M:
             fx, fy = smooth[d[2]]
@@ -296,7 +319,8 @@ for zi, zm in zones.items():
     zone_info[zi] = {"area_m2": area, "label_xy": (cx, cy), "mask": zm}
 
 # ---------------- 3. POIs + boundary doors ----------------
-poi_doc = yaml.safe_load(open(POI_YAML))
+with open(POI_YAML, encoding="utf-8") as stream:
+    poi_doc = yaml.safe_load(stream)
 pois = poi_doc["objects"]
 
 # doors: scan 24 directions around each door; "behind" = the direction whose
@@ -353,11 +377,6 @@ for zi in zone_ids:
                                    if o.get("_zone") == zi)
 
 # ---------------- report (for LLM naming pass + v3.1 self-check) ----------------
-X_PROBES = {"X1_NW": (-5.5, 1.0), "X2_E": (4.5, 2.0), "X3_S": (0.0, -4.5)}
-x_inside = {}
-for name, (x, y) in X_PROBES.items():
-    r, c = w2p(x, y)
-    x_inside[name] = bool(main_fill[int(round(r)), int(round(c))])
 poi_dist = {}
 mf_dt = cv2.distanceTransform(1 - main_fill, cv2.DIST_L2, 5)
 for o in pois:
@@ -367,7 +386,6 @@ for o in pois:
 
 report = {"main_area_m2": main_area_m2,
           "visibility": vis_stats,
-          "x_probes_inside_mask": x_inside,
           "poi_dist_to_mask_m": poi_dist,
           "notches_px": notches,
           "chords_px": [[list(p), list(q)] for p, q in chords],
@@ -387,12 +405,14 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon as MplPolygon
 from matplotlib.lines import Line2D
+from label_layout import place_labels
 
 x0, x1 = OX + C0 * RES, OX + (C1 - 1) * RES
 y0 = OY + (H0 - 1 - (R1 - 1)) * RES
 y1 = OY + (H0 - 1 - R0) * RES
 
-fig, ax = plt.subplots(figsize=(11, 10))
+fig, ax = plt.subplots(figsize=(11, 10), dpi=FIG_DPI)
+labels = []
 ax.set_aspect("equal")
 ax.set_facecolor("#f7f5f0")
 
@@ -449,8 +469,9 @@ for d in doors:
     lx = x + ux * (BUBBLE_R_M + 0.45)
     ly = y + uy * (BUBBLE_R_M + 0.45)
     if all(math.hypot(lx - a, ly - b) > 1.6 for a, b in labeled):
-        ax.text(lx, ly, "unexplored", fontsize=7.5, style="italic",
-                color="#666666", ha="center", va="center", zorder=6)
+        labels.append({"xy": (lx, ly), "text": "unexplored",
+                       "style": {"fontsize": 7.5, "style": "italic",
+                                 "color": "#666666"}})
         labeled.append((lx, ly))
 
 # POIs
@@ -465,20 +486,19 @@ for o in pois:
     ax.scatter([o["x"]], [o["y"]], marker=mk, s=sz, c=col,
                edgecolors="white", linewidths=1.2, zorder=5)
     if o["label"] == "spray":
-        ax.annotate("insecticide spray", (o["x"], o["y"]),
-                    xytext=(o["x"] - 2.15, o["y"] + 0.05),
-                    fontsize=10, fontweight="bold", color="#b00000",
-                    ha="center", zorder=6, path_effects=HALO,
-                    arrowprops=dict(arrowstyle="->", color="#b00000",
-                                    lw=1.2))
+        labels.insert(0, {"xy": (o["x"], o["y"]),
+                          "text": o.get("display_name", "insecticide spray"),
+                          "style": {"fontsize": 9, "fontweight": "bold",
+                                    "color": "#b00000", "path_effects": HALO}})
 
 # zone names + areas
 for zi, v in sorted(zone_info.items()):
     name, _why = ZONE_NAMES.get(zi, ("Zone %d" % (zi + 1), ""))
     cx, cy = v["label_xy"]
-    ax.text(cx, cy, "%s\n%.1f m²" % (name, v["area_m2"]), fontsize=11,
-            fontweight="bold", color="#333333", ha="center", va="center",
-            zorder=4, path_effects=HALO)
+    labels.append({"xy": (cx, cy), "text": "%s\n%.1f m²" % (name, v["area_m2"]),
+                   "mask": v["mask"],
+                   "style": {"fontsize": 11, "fontweight": "bold",
+                             "color": "#333333", "path_effects": HALO}})
 
 # scale bar (2 m), bottom-right clear of the legend
 bx, by = x1 - 3.1, y0 + 0.55
@@ -514,17 +534,19 @@ handles = [
     Line2D([0], [0], color="#7a7a7a", lw=1.4, ls="--",
            label="unexplored (behind door)"),
 ]
-ax.legend(handles=handles, loc="lower left", fontsize=8.5, framealpha=0.95,
-          borderpad=0.8, labelspacing=0.5)
+ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.03),
+          ncol=3, fontsize=8.5, framealpha=0.95, borderpad=0.8, labelspacing=0.5)
 
-ax.set_xlim(x0 - 0.4, x1 + 0.4)
-ax.set_ylim(y0 - 0.4, y1 + 0.4)
+ax.set_xlim(x0 - 1.2, x1 + 1.2)
+ax.set_ylim(y0 - 1.2, y1 + 1.2)
 ax.set_xticks([])
 ax.set_yticks([])
 for sp in ax.spines.values():
     sp.set_visible(False)
-ax.set_title("Home floor plan v3.1 (visibility-verified outline, "
-             "SLAM survey 2026-08-30)", fontsize=13, pad=10)
+visibility_label = "visibility verified" if VIS_CHECK else "visibility check off"
+ax.set_title("Floor plan v3.1 — %s\n%s" %
+             (os.path.basename(MAP_YAML), visibility_label), fontsize=13, pad=10)
+place_labels(fig, ax, labels, pois, w2p)
 
 png = os.path.join(OUT_DIR, "floorplan_v31.png")
 fig.savefig(png, dpi=FIG_DPI, bbox_inches="tight", facecolor=fig.get_facecolor())
@@ -563,14 +585,15 @@ out = {
 }
 for zi, v in sorted(zone_info.items()):
     name, why = ZONE_NAMES.get(zi, ("Zone %d" % (zi + 1),
-                                    "unnamed (run naming pass)"))
+                                    "automatic label from the segment identifier"))
     out["zones"].append({
         "id": int(zi), "name": name,
         "area_m2": round(float(v["area_m2"]), 1),
         "label_xy_m": [round(float(v["label_xy"][0]), 2),
                        round(float(v["label_xy"][1]), 2)],
         "poi_labels": v["pois"], "naming_rationale": why,
-        "named_by": "LLM (name only; geometry from map data)",
+        "named_by": ("LLM (name only; geometry from map data)" if zi in ZONE_NAMES
+                     else "segment identifier"),
     })
 with open(os.path.join(OUT_DIR, "zones_v31.yaml"), "w",
           encoding="utf-8") as f:

@@ -12,22 +12,33 @@ Pipeline (geometry 100% from map data):
 LLM (me) only assigns zone names (ZONE_NAMES below, with rationale in the
 output YAML). No geometry is invented.
 
-Usage: python make_floorplan_v3.py
+Usage: python make_floorplan_v3.py --map MAP.yaml --pois POIS.yaml
 Outputs: floorplan/out_v3/floorplan_v3.png (+ .svg, zones_v3.yaml)
 """
+import argparse
 import json
 import math
 import os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+parser.add_argument("--map", required=True, help="occupancy-map YAML")
+parser.add_argument("--pois", required=True, help="semantic POI YAML")
+parser.add_argument("--out", default=os.path.join(HERE, "out_v3"),
+                    help="output directory")
+args = parser.parse_args()
+for name, filename in (("--map", args.map), ("--pois", args.pois)):
+    if not os.path.isfile(filename):
+        parser.error(f"{name} file does not exist: {filename}")
 
 import cv2
 import numpy as np
 import yaml
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-MAP_YAML = os.path.join(ROOT, "maps", "home_floor_20260830_v2.yaml")
-POI_YAML = os.path.join(ROOT, "data", "semantic_objects_final_combined.yaml")
-OUT_DIR = os.path.join(HERE, "out_v3")
+MAP_YAML = args.map
+POI_YAML = args.pois
+OUT_DIR = args.out
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # ---------------- tunables ----------------

@@ -15,10 +15,10 @@ import sys
 import unittest
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(TESTS_DIR)))
-RELEASES = os.path.join(REPO_ROOT, "releases")
-if RELEASES not in sys.path:
-    sys.path.insert(0, RELEASES)
+PKG_ROOT = os.path.dirname(TESTS_DIR)
+SCRIPTS = os.path.join(PKG_ROOT, "scripts")
+if SCRIPTS not in sys.path:
+    sys.path.insert(0, SCRIPTS)
 
 import survey_tour_logic as logic
 
@@ -60,8 +60,7 @@ class TestForwardSign(unittest.TestCase):
         # joystick.yaml's scale_linear is negative on purpose (inverted pad
         # axis).  The tour must NOT inherit that sign; if someone "aligns"
         # the two again, this test recreates the bag-18 failure report.
-        joystick = os.path.join(REPO_ROOT, "src", "jetbot_pro", "config",
-                                "teleop", "joystick.yaml")
+        joystick = os.path.join(PKG_ROOT, "config", "teleop", "joystick.yaml")
         scale = None
         with open(joystick) as stream:
             for line in stream:
@@ -160,8 +159,7 @@ class TestFrontCone(unittest.TestCase):
         # LIDAR_STOP_M must keep a real braking band
         # ABOVE the blind zone ([clip, stop) is the only distance where the
         # tour can still brake); do not assume sub-clip protection exists.
-        clip_path = os.path.join(REPO_ROOT, "src", "jetbot_pro",
-                                 "scripts", "scan_clip.py")
+        clip_path = os.path.join(SCRIPTS, "scan_clip.py")
         with open(clip_path) as stream:
             source = stream.read()
         match = re.search(r'get_param\("~min_range_m",\s*([0-9.]+)\)', source)
@@ -228,20 +226,6 @@ class TestTurnSweepGate(unittest.TestCase):
 
 
 class TestSteering(unittest.TestCase):
-    def test_tour_wires_drift_to_fail_close(self):
-        tour_path = os.path.join(RELEASES, "survey_tour_20260827.py")
-        with open(tour_path) as stream:
-            source = stream.read()
-        self.assertIn("amcl-drift", source)
-        self.assertIn('if state == "drive" and vx > 0.0:', source)
-        self.assertIn('return "drift"', source)
-        self.assertIn("raise RuntimeError(\"amcl-drift", source)
-        drift_at = source.index('raise RuntimeError(\"amcl-drift')
-        handler_end = source.index("        if result:", drift_at)
-        self.assertNotIn("tour.complete()", source[drift_at:handler_end])
-        self.assertLess(source.index("_abort_recorder", drift_at),
-                        source.index('if __name__'))
-
     def test_goal_ahead_drives_forward(self):
         vx, wz, state = logic.steer_command(0.0, 0.0, 0.0, 1.0, 0.0)
         self.assertEqual(state, "drive")

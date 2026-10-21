@@ -17,7 +17,7 @@ The workflow combines supervised tele-operated surveys with offline processing:
    task-specific training) on the recorded stereo frames;
 3. stereo disparity depth + SLAM TF projection, placing detected points of
    interest (doors, sofas, cabinets, vending machines, ...) onto the map;
-4. room segmentation (two candidate approaches, see below) and an optional
+4. room segmentation (two methods, see below) and an optional
    labeled floor-plan rendering pipeline (`floorplan/`).
 
 The motivation: mainstream navigation apps do not work inside buildings because
@@ -25,19 +25,23 @@ providers cannot obtain effective, up-to-date indoor data. A small robot that an
 student can run (with the building owner's approval) can build a
 building-specific semantic map instead.
 
-## Final result
+## Survey renderings
 
-The final result combines data from **two supervised tele-operated survey runs**
-of a real apartment into a labeled architectural floor plan (room segmentation,
-areas, doors/furniture POIs from open-vocabulary detection, unexplored regions
-marked). "One-pass capture" describes the synchronized recording within each
-run; the final renderings below use data from both runs. In particular,
-both floor-plan scripts use trajectories from both survey bags for their
-visibility check.
+These renderings combine **two supervised tele-operated survey runs** of a real
+apartment. "One-pass capture" describes synchronized recording within each run;
+the renderings use both trajectories for the visibility check.
 
-There are currently two candidate approaches to the room segmentation step,
-shown side by side below on the same map, outline and POIs. Further research
-and testing are needed before settling on one.
+The same measured outline is segmented in two ways: v3.1 cuts chords between
+concave corners; v3.2 uses Voronoi segmentation (Bormann et al., ICRA 2016,
+Sec. III-C). Their different room boundaries are part of the result. The outline
+is the measured occupancy-map boundary with light `approxPolyDP` smoothing;
+it has not been straightened into right-angled walls.
+
+The red star marks an open-vocabulary `insecticide spray` query hit, demonstrating
+LLMDet localization of a long-tail class without training on this home. Doors,
+sofas and cabinets are common classes in the same query set. The
+`HALL_V1_CLASSES` prompts map `cabinet door` to cabinet, use `daybed` to catch
+the covered sofa, and deliberately omit `bed`.
 
 <table>
   <tr>
@@ -52,8 +56,9 @@ and testing are needed before settling on one.
   </tr>
 </table>
 
-The corresponding rosbags and occupancy maps are not distributed (see below);
-these renderings are published deliberately as the project's final artifacts.
+The corresponding rosbags and occupancy maps are not distributed. The two
+published images are retained unchanged; the synthetic example below exercises
+the rendering code with public, fictional data.
 
 ## Repository layout
 
@@ -65,7 +70,6 @@ these renderings are published deliberately as the project's final artifacts.
 | `tools/` | Offline PC-side pipeline: bag analysis, stereo timestamp checks, detection, semantic-layer merging, POI de-duplication, room segmentation (incl. a Voronoi implementation written with reference to Bormann et al.'s room-segmentation survey, ICRA 2016), map-identity manifests, glass keep-out map builder |
 | `tests/` | PC-side pytest suites for the offline pipeline (artifact contracts, map identity, rosbag index compatibility, room-segmentation boundaries, detection post-processing) |
 | `floorplan/` | Occupancy grid → labeled architectural floor plan. Geometry is fully deterministic; an LLM is optionally used **only** to propose room names and cannot alter any coordinate |
-| `deploy/` | Field scripts actually used on the robot: atomic survey capture with preflight checks, AMCL diagnostics, teleop restart, disk/status probes, release manifests |
 | `docs/` | Technical run-books (in Chinese): end-to-end demo guide, IMX219-83 stereo migration notes and calibration guide |
 
 ## Why patches instead of a full source tree
@@ -90,8 +94,8 @@ Pinned upstream commits:
 ## What is intentionally *not* in this repository
 
 - Recorded rosbags and the raw occupancy maps (they were surveyed in a private
-  home; both privacy-sensitive and far too large for git). The single rendered
-  floor plan above is the only surveyed artifact published, by choice.
+  home; both privacy-sensitive and far too large for git). The two rendered
+  floor plans above are the only surveyed artifacts published, by choice.
 - Model weights (see `tools/requirements-offline.txt` and the detection scripts
   for how to fetch them).
 - API credentials of any kind. All external services are read from environment
@@ -100,39 +104,62 @@ Pinned upstream commits:
 ## Testing
 
 ```bash
-# PC-side offline pipeline tests
-python -m pytest tests/
-
-# package-level tests (after setup_workspace.sh, inside the assembled package)
-python -m pytest overlay/jetbot_pro/tests/
+python -m pip install -r requirements-test.txt
+export JETBOT_TEST_SRC="$PWD/.test-workspace/src"
+bash setup_workspace.sh "$JETBOT_TEST_SRC"
+python -m pytest tests overlay/jetbot_pro/tests -q
 ```
+
+Run these commands in Bash (Git Bash on Windows). The setup step downloads the
+pinned upstream sources into a local test workspace and applies this repository's
+patches and overlays; it does not build ROS or redistribute upstream code. CI
+uses a fresh temporary workspace. Without this step, only tests that inspect
+unredistributed upstream files explicitly skip; the four core segmentation,
+artifact-contract, map-identity and stereo-geometry suites still run.
+
+The test environment includes SciPy, scikit-image and Matplotlib because the
+existing segmentation algorithms and renderer use them. It does not install
+model, GPU, ROS or rosbag dependencies; tests requiring ROS or rosbags explicitly
+skip when those optional environments are absent.
+
+Render the fully synthetic three-room map and its four POI classes:
+
+```bash
+python floorplan/make_floorplan_v32.py \
+  --map floorplan/fixtures/synthetic_apartment.yaml \
+  --pois floorplan/fixtures/synthetic_pois.yaml \
+  --no-visibility \
+  --out floorplan/out_demo
+```
+
+Use `make_floorplan_v31.py` with the same arguments for the chord-based renderer.
+Both scripts require `--map` and `--pois`; `--out` defaults to
+`floorplan/out_demo/`. Visibility checks require explicit `--bag PATH` arguments
+(repeat for multiple survey bags). With `--no-visibility`, no bag is opened.
 
 ## Development notes
 
 Built and iterated over several months as a personal project. AI coding
 assistants were used during development (pair-programming and code review);
 every change that reached the robot went through the preflight/contract checks
-in `deploy/` and the test suites above, and field failures were diagnosed and
+and the test suites above, and field failures were diagnosed and
 fixed by hand. The docs in `docs/` are the run-books actually used during
 surveys.
 
 ## License
 
-Original code in this repository (everything outside `patches/`) is released
-under the MIT License (see `LICENSE`). The patches remain subject to the terms
-of their respective upstream projects — see `THIRD_PARTY.md`.
+Original code is released under the [MIT License](LICENSE).
+Third-party attribution and licensing details are in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## What was sanitized before publishing (read this before filing a bug)
 
 This repository was extracted from a private working tree. Before you conclude
 that something is broken, check whether it is one of these deliberate removals:
 
-1. **No recorded data ships with the repo.** All rosbags, occupancy maps
-   (`.pgm`/`.yaml`) and their derived outputs were surveyed in a private home
-   and are not distributed. Anything that takes a `--map` / `--objects` / bag
-   path needs **your own** survey data. In particular,
-   `floorplan/make_floorplan.py`'s built-in default map path points at the
-   author's private map — always pass `--map` explicitly.
+1. **No private recorded data ships with the repo.** Real survey rosbags and
+   occupancy maps are not distributed. Use your own survey data or the explicitly
+   synthetic map and POIs in `floorplan/fixtures/`; neither fixture contains
+   measurements from a home.
 2. **`floorplan/doors_sample.yaml` contains fictional coordinates.** It is a
    format example only; real door positions were replaced for privacy.
 3. **Upstream sources are not vendored.** `overlay/` + `patches/` only become a
@@ -145,11 +172,7 @@ that something is broken, check whether it is one of these deliberate removals:
    vendor API credentials there, and voice control is unrelated to semantic
    mapping. After `setup_workspace.sh`, those files remain exactly as upstream
    ships them.
-5. **`deploy/` is a historical archive.** Those scripts ran on the actual
-   robot; absolute paths (`/home/jetbot/...`), the LAN IP `192.168.3.31` and
-   host-specific assumptions were kept for authenticity and will need adapting
-   to your setup.
-6. **No credentials of any kind are included.** External services (e.g. the
+5. **No credentials of any kind are included.** External services (e.g. the
    optional LLM room-naming step in `floorplan/`) read keys from environment
    variables / a local `.env` that you supply yourself. Detection model
    weights are also fetched separately (see `tools/requirements-offline.txt`).

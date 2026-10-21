@@ -1,0 +1,8 @@
+pytest
+numpy
+PyYAML
+Pillow
+opencv-python-headless
+scipy
+scikit-image
+matplotlib

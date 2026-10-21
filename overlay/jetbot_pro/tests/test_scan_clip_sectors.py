@@ -19,10 +19,8 @@ TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 PKG_ROOT = os.path.dirname(TESTS_DIR)
 REPO_ROOT = os.path.dirname(os.path.dirname(PKG_ROOT))
 SCRIPTS = os.path.join(PKG_ROOT, "scripts")
-RELEASES = os.path.join(REPO_ROOT, "releases")
-for path in (SCRIPTS, RELEASES):
-    if path not in sys.path:
-        sys.path.insert(0, path)
+if SCRIPTS not in sys.path:
+    sys.path.insert(0, SCRIPTS)
 
 import scan_clip_core as core  # noqa: E402
 import survey_tour_logic as logic  # noqa: E402
@@ -151,8 +149,14 @@ class TestConstantOrdering(unittest.TestCase):
 
 class TestDeploymentRegistration(unittest.TestCase):
     def test_lidar_launch_min_range_matches_this_suite(self):
-        path = os.path.join(PKG_ROOT, "launch", "lidar.launch")
-        root = ET.parse(path).getroot()
+        patch = os.path.join(REPO_ROOT, "patches", "jetbot_pro_local_changes.patch")
+        with open(patch, "r", encoding="utf-8") as stream:
+            section = stream.read().split(
+                "diff --git a/launch/lidar.launch b/launch/lidar.launch\n", 1)[1]
+        section = section.split("\ndiff --git ", 1)[0]
+        xml = "\n".join(line[1:] for line in section.splitlines()
+                        if line.startswith("+") and not line.startswith("+++"))
+        root = ET.fromstring(xml)
         node = next(n for n in root.findall("node")
                     if n.get("name") == "scan_clip")
         param = next(p for p in node.findall("param")
@@ -160,23 +164,19 @@ class TestDeploymentRegistration(unittest.TestCase):
         self.assertEqual(float(param.get("value")), MIN_RANGE_M)
 
     def test_core_module_is_registered_for_catkin_install(self):
-        with open(os.path.join(PKG_ROOT, "CMakeLists.txt"), "r") as stream:
+        patch = os.path.join(REPO_ROOT, "patches", "jetbot_pro_local_changes.patch")
+        with open(patch, "r", encoding="utf-8") as stream:
             cmake = stream.read()
-        self.assertIn("scripts/scan_clip_core.py", cmake)
+        self.assertIn("+  scripts/scan_clip_core.py", cmake)
 
-    def test_entry_script_deploys_the_core_module_to_both_trees(self):
-        path = os.path.join(RELEASES, "start_nav_survey.sh")
+    def test_workspace_setup_copies_the_overlay_modules(self):
+        path = os.path.join(REPO_ROOT, "setup_workspace.sh")
         with open(path, "r") as stream:
             start = stream.read()
-        self.assertIn("scan_clip_core.py", start)
-        self.assertIn("map_identity.py", start)
-        self.assertIn("replay_contract.py", start)
-        self.assertIn('cp "/tmp/$py" '
-                      '"/home/jetbot/catkin_ws/src/jetbot_pro/scripts/$py"',
-                      start)
-        self.assertIn('cp "/tmp/$py" '
-                      '"/home/jetbot/catkin_ws/devel/lib/jetbot_pro/$py"',
-                      start)
+        self.assertIn('cp -r "$HERE/overlay/jetbot_pro/." "$TARGET/jetbot_pro/"', start)
+        for module in ("scan_clip_core.py", "map_identity.py", "replay_contract.py",
+                       "survey_tour_logic.py"):
+            self.assertTrue(os.path.isfile(os.path.join(SCRIPTS, module)))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,8 @@
+# 完全合成的三室占用栅格，不含真实住宅数据；自由区 254、墙 0、未知区 205。
+image: synthetic_apartment.pgm
+synthetic: true
+resolution: 0.05
+origin: [0.0, 0.0, 0.0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196

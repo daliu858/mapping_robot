@@ -10,7 +10,8 @@ import numpy as np
 import yaml
 
 
-PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 上游源码契约需组装工作区；纯 overlay 校准与双目检查仍直接运行。
+from workspace_support import PACKAGE_ROOT, requires_upstream
 LAUNCH_DIR = os.path.join(PACKAGE_ROOT, "launch")
 
 
@@ -52,6 +53,7 @@ class CameraLaunchDefaultsTest(unittest.TestCase):
         self.assertGreater(baseline, 0.055)
         self.assertLess(baseline, 0.065)
 
+    @requires_upstream
     def test_camera_process_death_tears_down_owning_launch(self):
         filename = os.path.join(LAUNCH_DIR, "csi_camera.launch")
         root = ET.parse(filename).getroot()
@@ -68,6 +70,7 @@ class CameraLaunchDefaultsTest(unittest.TestCase):
         for name in ("stereo_pair_gate", "stereo_image_proc"):
             self.assertEqual(nodes[name].get("required"), "true")
 
+    @requires_upstream
     def test_all_stereo_entrypoints_keep_verified_sensor_mapping(self):
         filenames = (
             "camera_select.launch",

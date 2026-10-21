@@ -27,7 +27,7 @@ def _load(name, path):
 
 JETSON_IDENTITY = _load(
     "jetson_map_identity_test",
-    ROOT / "src" / "jetbot_pro" / "scripts" / "map_identity.py")
+    ROOT / "overlay" / "jetbot_pro" / "scripts" / "map_identity.py")
 PC_IDENTITY = _load("pc_map_identity_test", ROOT / "tools" / "map_identity.py")
 
 

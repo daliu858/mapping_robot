@@ -1,0 +1,20 @@
+# 人工放置的样例点，与同目录合成地图对齐；不是检测记录。
+frame: map
+synthetic: true
+objects:
+  - label: door
+    display_name: door
+    x: 6.6
+    y: 5.45
+  - label: sofa
+    display_name: sofa
+    x: 3.0
+    y: 7.7
+  - label: cabinet
+    display_name: cabinet
+    x: 18.5
+    y: 7.7
+  - label: spray
+    display_name: insecticide spray
+    x: 10.25
+    y: 3.45

@@ -1,14 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Pure, ROS-free control logic for the openloop AMCL waypoint tour.
+"""Pure, ROS-free steering, drift and lidar-cone logic.
 
-This module is the single home of the forward-sign convention and the
-head-cone lidar filter.  It is imported by ``survey_tour_20260827.py`` on
-the robot and by ``src/jetbot_pro/tests/test_survey_tour_logic.py`` on the
-PC, so a sign or cone regression fails CI before it can strand a survey.
-
-Deployment: copy this file next to the tour script (same directory), see
-``start_nav_survey.sh`` / ``rerun_tour.sh``.
+The overlay keeps this reusable module alongside scan_clip_core.py so the
+control contracts can be checked without a robot or a recorded survey.
 """
 from __future__ import print_function
 
